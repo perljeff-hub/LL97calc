@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — NYC LL97 Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#1a5276"/>
+        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="header-title">NYC LL97 Calculator</div>
+        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-link">Calculator</a>
+      <a href="/settings" class="nav-link active">⚙ Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <section class="card">
+    <h2 class="card-title">GHG Emission Factor Settings</h2>
+    <p class="card-desc">
+      Customize the utility GHG emission coefficients used for the 2035–2039, 2040–2049,
+      and 2050+ compliance periods. The law does not specify these factors beyond 2034,
+      so they default to the 2030–2034 values. Modify them here to model different
+      decarbonization scenarios.
+    </p>
+    <p class="card-desc">
+      <strong>Note:</strong> The electricity factor in 2050+ is required to be 0 by law.
+      All building emission intensity limits (per square foot) in 2050+ are also 0 by law —
+      those cannot be overridden here.
+    </p>
+  </section>
+
+  <!-- ── FACTORS TABLE ────────────────────────────────────────────────────── -->
+  <section class="card wide-card">
+    <div class="settings-table-wrapper">
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th>Emission Factor</th>
+            <th>Units</th>
+            {% for period in modifiable_periods %}
+            <th>{{ period_labels[period] }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for fuel_key, fuel_label in modifiable_fuels %}
+          <tr>
+            <td class="factor-name">{{ fuel_label }}</td>
+            <td class="factor-unit">
+              {% if fuel_key == 'electricity_kwh' %}tCO₂e/kWh
+              {% else %}tCO₂e/kBtu{% endif %}
+            </td>
+            {% for period in modifiable_periods %}
+            <td>
+              <div class="factor-cell">
+                <input
+                  type="number"
+                  class="factor-input"
+                  id="factor-{{ period }}-{{ fuel_key }}"
+                  name="{{ period }}-{{ fuel_key }}"
+                  step="0.0000001"
+                  min="0"
+                  value="{{ user_factors.get(period, {}).get(fuel_key, default_factors[period][fuel_key]) }}"
+                  data-default="{{ default_factors[period][fuel_key] }}"
+                  {% if fuel_key == 'electricity_kwh' and period == '2050_plus' %}
+                    value="0" readonly title="Required to be 0 by law in 2050+"
+                  {% endif %}
+                />
+                <div class="factor-default">
+                  Default: {{ "%.7f" | format(default_factors[period][fuel_key]) }}
+                </div>
+              </div>
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn btn-primary" id="save-btn">Save Settings</button>
+      <button class="btn btn-ghost" id="reset-btn">Reset to Defaults</button>
+      <span id="save-status" class="save-status"></span>
+    </div>
+  </section>
+
+  <!-- ── READ-ONLY: 2024-2034 REFERENCE ──────────────────────────────────── -->
+  <section class="card wide-card">
+    <h2 class="card-title">Reference: Statutory Emission Coefficients (2024–2034)</h2>
+    <p class="card-desc">
+      These values are set by law (1 RCNY §103-14) and cannot be modified.
+      Shown here for reference when setting custom values for later periods.
+    </p>
+
+    <div class="settings-table-wrapper">
+      <table class="settings-table readonly-table">
+        <thead>
+          <tr>
+            <th>Emission Factor</th>
+            <th>Units</th>
+            <th>2024–2029</th>
+            <th>2030–2034</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ref_factors = [
+            ('electricity_kwh',     'Electricity',       'tCO₂e/kWh'),
+            ('natural_gas_kbtu',    'Natural Gas',       'tCO₂e/kBtu'),
+            ('district_steam_kbtu', 'District Steam',    'tCO₂e/kBtu'),
+            ('fuel_oil_2_kbtu',     '#2 Fuel Oil',       'tCO₂e/kBtu'),
+            ('fuel_oil_4_kbtu',     '#4 Fuel Oil',       'tCO₂e/kBtu'),
+          ] %}
+          {% for key, label, unit in ref_factors %}
+          <tr>
+            <td>{{ label }}</td>
+            <td>{{ unit }}</td>
+            <td class="mono">{{ "%.9f" | format(default_factors['2024_2029'][key]) }}</td>
+            <td class="mono">{{ "%.9f" | format(default_factors['2030_2034'][key]) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── UNIT CONVERSION REFERENCE ─────────────────────────────────────── -->
+  <section class="card">
+    <h2 class="card-title">Unit Conversion Reference</h2>
+    <table class="settings-table readonly-table">
+      <thead>
+        <tr><th>Fuel</th><th>Input Unit</th><th>Conversion to kBtu</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Natural Gas</td><td>therms</td><td>1 therm = 100 kBtu</td></tr>
+        <tr><td>District Steam</td><td>Mlb (1,000 lbs)</td><td>1 Mlb ≈ 1,194 kBtu (Con Edison)</td></tr>
+        <tr><td>#2 Fuel Oil</td><td>gallons</td><td>1 gallon = 138.5 kBtu</td></tr>
+        <tr><td>#4 Fuel Oil</td><td>gallons</td><td>1 gallon = 146.0 kBtu</td></tr>
+        <tr><td>Electricity</td><td>kWh</td><td>No conversion — factor applied per kWh directly</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice.</p>
+  </div>
+</footer>
+
+<script>
+const MODIFIABLE_PERIODS = {{ modifiable_periods | tojson }};
+const DEFAULT_FACTORS = {{ default_factors | tojson }};
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const payload = {};
+  MODIFIABLE_PERIODS.forEach(period => {
+    payload[period] = {};
+    document.querySelectorAll(`[id^="factor-${period}-"]`).forEach(input => {
+      const fuel = input.id.replace(`factor-${period}-`, '');
+      payload[period][fuel] = parseFloat(input.value) || 0;
+    });
+  });
+
+  const resp = await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await resp.json();
+  const status = document.getElementById('save-status');
+  if (data.status === 'saved') {
+    status.textContent = '✓ Settings saved';
+    status.className = 'save-status saved';
+  } else {
+    status.textContent = '✗ Error saving';
+    status.className = 'save-status error';
+  }
+  setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
+});
+
+document.getElementById('reset-btn').addEventListener('click', async () => {
+  if (!confirm('Reset all custom settings to defaults?')) return;
+  await fetch('/api/settings/reset', { method: 'POST' });
+  // Reset all inputs to defaults
+  MODIFIABLE_PERIODS.forEach(period => {
+    document.querySelectorAll(`[id^="factor-${period}-"]`).forEach(input => {
+      const fuel = input.id.replace(`factor-${period}-`, '');
+      input.value = DEFAULT_FACTORS[period][fuel];
+    });
+  });
+  const status = document.getElementById('save-status');
+  status.textContent = '✓ Reset to defaults';
+  status.className = 'save-status saved';
+  setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
+});
+
+// Highlight modified cells
+document.querySelectorAll('.factor-input').forEach(input => {
+  const defaultVal = parseFloat(input.dataset.default);
+  const check = () => {
+    const cur = parseFloat(input.value);
+    input.classList.toggle('modified', Math.abs(cur - defaultVal) > 1e-10);
+  };
+  input.addEventListener('input', check);
+  check();
+});
+</script>
+</body>
+</html>

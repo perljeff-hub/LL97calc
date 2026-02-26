@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC LL97 Carbon Emissions Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#1a5276"/>
+        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="header-title">NYC LL97 Calculator</div>
+        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-link active">Calculator</a>
+      <a href="/settings" class="nav-link">⚙ Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <!-- ── BUILDING SEARCH ─────────────────────────────────────────────────── -->
+  <section class="card" id="search-section">
+    <h2 class="card-title">Building Lookup <span class="badge badge-opt">Optional</span></h2>
+    <p class="card-desc">Search the NYC LL84 benchmarking database by address, building name, or BBL to auto-populate energy data. Or enter data manually below.</p>
+    <div class="search-row">
+      <input type="text" id="search-input" class="form-input" placeholder="e.g. 123 Main St, Empire State Building, or BBL 1000477501" autocomplete="off" />
+      <button class="btn btn-secondary" id="search-btn">Search</button>
+    </div>
+    <div id="search-results" class="search-results hidden"></div>
+    <div id="db-status-msg" class="info-msg hidden"></div>
+  </section>
+
+  <!-- ── ENERGY INPUTS ────────────────────────────────────────────────────── -->
+  <div class="two-col">
+
+    <section class="card" id="energy-section">
+      <h2 class="card-title">Annual Energy Consumption</h2>
+      <p class="card-desc">Enter the building's annual energy use. Leave blank if not applicable.</p>
+
+      <div class="input-group">
+        <label class="input-label" for="elec">Electricity <span class="unit">(kWh)</span></label>
+        <input type="number" id="elec" class="form-input" min="0" placeholder="0" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="gas">Natural Gas <span class="unit">(therms)</span></label>
+        <input type="number" id="gas" class="form-input" min="0" placeholder="0" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="steam">District Steam <span class="unit">(Mlb — thousands of lbs)</span></label>
+        <input type="number" id="steam" class="form-input" min="0" placeholder="0" step="0.001" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="fo2">#2 Fuel Oil <span class="unit">(gallons)</span></label>
+        <input type="number" id="fo2" class="form-input" min="0" placeholder="0" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="fo4">#4 Fuel Oil <span class="unit">(gallons)</span></label>
+        <input type="number" id="fo4" class="form-input" min="0" placeholder="0" />
+      </div>
+    </section>
+
+    <!-- ── ENERGY PRICES ────────────────────────────────────────────────── -->
+    <section class="card" id="prices-section">
+      <h2 class="card-title">Energy Prices <span class="badge badge-opt">Optional</span></h2>
+      <p class="card-desc">Used for utility cost analysis. Defaults shown are NYC averages.</p>
+
+      <div class="input-group">
+        <label class="input-label" for="p-elec">Electricity <span class="unit">($/kWh)</span></label>
+        <input type="number" id="p-elec" class="form-input" min="0" step="0.001" value="0.150" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="p-gas">Natural Gas <span class="unit">($/therm)</span></label>
+        <input type="number" id="p-gas" class="form-input" min="0" step="0.01" value="1.50" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="p-steam">District Steam <span class="unit">($/Mlb)</span></label>
+        <input type="number" id="p-steam" class="form-input" min="0" step="0.01" value="18.00" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="p-fo2">#2 Fuel Oil <span class="unit">($/gallon)</span></label>
+        <input type="number" id="p-fo2" class="form-input" min="0" step="0.01" value="3.00" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="p-fo4">#4 Fuel Oil <span class="unit">($/gallon)</span></label>
+        <input type="number" id="p-fo4" class="form-input" min="0" step="0.01" value="2.90" />
+      </div>
+    </section>
+  </div>
+
+  <!-- ── OCCUPANCY GROUPS ─────────────────────────────────────────────────── -->
+  <section class="card" id="occupancy-section">
+    <h2 class="card-title">Building Occupancy &amp; Floor Area</h2>
+    <p class="card-desc">
+      Select up to 4 ESPM property types and enter the gross floor area for each.
+      The total floor area of all entries should equal the building's total gross floor area.
+      <br><em>Note: From 2026 onward, LL97 requires ESPM property types (not NYC Building Code occupancy groups).</em>
+    </p>
+
+    <div id="occupancy-groups">
+      <!-- rows inserted by JS -->
+    </div>
+
+    <button class="btn btn-ghost" id="add-occ-btn">+ Add Another Occupancy Type</button>
+  </section>
+
+  <!-- ── CALCULATE BUTTON ─────────────────────────────────────────────────── -->
+  <div class="calc-action-row">
+    <button class="btn btn-primary btn-lg" id="calculate-btn">Calculate LL97 Compliance</button>
+    <button class="btn btn-ghost" id="clear-btn">Clear</button>
+  </div>
+
+  <div id="error-msg" class="error-msg hidden"></div>
+
+  <!-- ── RESULTS ──────────────────────────────────────────────────────────── -->
+  <section id="results-section" class="hidden">
+
+    <!-- Utility Costs -->
+    <section class="card" id="costs-card">
+      <h2 class="card-title">Annual Utility Costs</h2>
+      <div class="costs-grid" id="costs-grid"></div>
+    </section>
+
+    <!-- Emissions Results (one column per period) -->
+    <section class="card wide-card" id="periods-card">
+      <h2 class="card-title">LL97 Compliance by Period</h2>
+      <p class="card-desc">Annual GHG emissions vs. building limit for each compliance period. Penalty = $268/tCO₂e over limit.</p>
+      <div class="periods-wrapper">
+        <div class="periods-scroll">
+          <div class="periods-grid" id="periods-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Emissions Breakdown -->
+    <section class="card" id="breakdown-card">
+      <h2 class="card-title">Emissions Breakdown by Source</h2>
+      <p class="card-desc">How each energy source contributes to your 2024–2029 GHG emissions.</p>
+      <div id="breakdown-bars"></div>
+    </section>
+
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+    <p>Energy data source: <a href="https://data.cityofnewyork.us/Environment/NYC-Building-Energy-and-Water-Data-Disclosure-for-/5zyy-y8am" target="_blank" rel="noopener">NYC LL84 Benchmarking Dataset</a></p>
+  </div>
+</footer>
+
+<!-- ── ESPM TYPE DATA ────────────────────────────────────────────────────── -->
+<script>
+window.ESPM_PROPERTY_TYPES = {{ espm_property_types | tojson }};
+window.COMPLIANCE_PERIODS   = {{ compliance_periods | tojson }};
+window.PERIOD_LABELS         = {{ period_labels | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/calculator.js') }}"></script>
+</body>
+</html>
