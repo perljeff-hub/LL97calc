@@ -39,17 +39,22 @@ FIELD_MAP = [
     ('postcode',             ['postcode', 'zip_code']),
     ('year_ending',          ['year_ending', 'reporting_year']),
     # Building characteristics
-    ('gross_floor_area',     ['dof_gross_floor_area', 'gross_floor_area_buildings_sq_ft',
-                               'largest_property_use_type_gross_floor_area']),
+    ('gross_floor_area',     ['dof_gross_floor_area', 'gross_floor_area_buildings_sq_ft']),
     ('primary_property_type',['largest_property_use_type', 'primary_property_type_self_selected']),
+    ('primary_floor_area',   ['largest_property_use_type_gross_floor_area',
+                               'largest_property_use_gross_floor_area']),
     ('second_property_type', ['second_largest_property_use', 'second_largest_property_use_type']),
+    ('second_floor_area',    ['second_largest_property_use_gross_floor_area']),
     ('third_property_type',  ['third_largest_property_use',  'third_largest_property_use_type']),
-    # Energy (all combustion fuels stored in kBtu; electricity in kWh)
-    # Electricity — 2022+ dataset reports in kWh
-    ('electricity_kwh',      ['electricity_use_grid_purchase',
-                               'electricity_use_grid_purchase_k_btu',  # older schema (kBtu—flag for conversion)
+    ('third_floor_area',     ['third_largest_property_use_gross_floor_area']),
+    # Energy — LL84 reports ALL energy values in kBtu.
+    # Electricity is converted to kWh on import (÷ 3.412142).
+    # All combustion fuels remain stored as kBtu; conversions to natural units
+    # (therms, Mlb, gallons) happen at display/search time in app.py.
+    ('electricity_kwh',      ['electricity_use_grid_purchase',        # kBtu in LL84 → converted to kWh
+                               'electricity_use_grid_purchase_k_btu', # older schema name
                                'electricity_kwh']),
-    # Natural gas — stored in kBtu regardless of source unit
+    # Natural gas — stored in kBtu; displayed as therms (÷ 100)
     ('natural_gas_kbtu',     ['natural_gas_use_kbtu', 'natural_gas_use_k_btu',
                                'natural_gas_use_therms']),             # therms—flag for conversion
     # District steam — kBtu
@@ -66,8 +71,11 @@ FIELD_MAP = [
     ('reported_ghg_intensity',['ghg_intensity_metric_tons_co2e_ft2', 'ghg_emissions_intensity_metric_tons']),
 ]
 
-# Fields that might be in kBtu but should be stored as kWh (conversion: /3.412)
-_ELEC_KBTU_FIELDS = {'electricity_use_grid_purchase_k_btu'}
+# ALL electricity fields from LL84 are in kBtu — always convert to kWh (÷ 3.412142)
+_ELEC_KBTU_FIELDS = {
+    'electricity_use_grid_purchase',
+    'electricity_use_grid_purchase_k_btu',
+}
 # Fields that might be in therms and should be stored as kBtu (* 100)
 _GAS_THERM_FIELDS = {'natural_gas_use_therms'}
 
@@ -99,8 +107,11 @@ def create_tables(conn):
             year_ending TEXT,
             gross_floor_area REAL,
             primary_property_type TEXT,
+            primary_floor_area REAL,
             second_property_type TEXT,
+            second_floor_area REAL,
             third_property_type TEXT,
+            third_floor_area REAL,
             electricity_kwh REAL,
             natural_gas_kbtu REAL,
             district_steam_kbtu REAL,
@@ -115,15 +126,16 @@ def create_tables(conn):
         )
     ''')
 
-    conn.execute('''
-        CREATE INDEX IF NOT EXISTS idx_bbl ON buildings(bbl)
-    ''')
-    conn.execute('''
-        CREATE INDEX IF NOT EXISTS idx_address ON buildings(address)
-    ''')
-    conn.execute('''
-        CREATE INDEX IF NOT EXISTS idx_property_name ON buildings(property_name)
-    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_bbl ON buildings(bbl)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_address ON buildings(address)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_property_name ON buildings(property_name)')
+
+    # Migrate existing databases that are missing the per-occupancy floor area columns
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(buildings)").fetchall()}
+    for col in ('primary_floor_area', 'second_floor_area', 'third_floor_area'):
+        if col not in existing:
+            conn.execute(f'ALTER TABLE buildings ADD COLUMN {col} REAL')
+
     conn.commit()
 
 
@@ -146,13 +158,13 @@ def _extract_row(record, detected_schema):
             row.append(raw_val or '')
         elif our_name == 'electricity_kwh':
             val = safe_float(raw_val)
-            # Older schema stored electricity in kBtu — convert to kWh
+            # LL84 reports electricity in kBtu — convert to kWh (÷ 3.412142)
             if val is not None and src_field in _ELEC_KBTU_FIELDS:
-                val = round(val / 3.412, 1)
+                val = round(val / 3.412142, 1)
             row.append(val)
         elif our_name == 'natural_gas_kbtu':
             val = safe_float(raw_val)
-            # Some schemas report therms — convert to kBtu (* 100)
+            # Rare legacy schema reports therms — convert to kBtu (* 100)
             if val is not None and src_field in _GAS_THERM_FIELDS:
                 val = val * 100
             row.append(val)
@@ -230,13 +242,15 @@ def import_ll84_data(verbose=True):
         conn.executemany('''
             INSERT INTO buildings (
                 bbl, property_name, parent_property_name, address, borough,
-                postcode, year_ending, gross_floor_area, primary_property_type,
-                second_property_type, third_property_type, electricity_kwh,
-                natural_gas_kbtu, district_steam_kbtu, fuel_oil_2_kbtu,
-                fuel_oil_4_kbtu, fuel_oil_56_kbtu, site_eui,
-                weather_norm_site_eui, energy_star_score,
+                postcode, year_ending, gross_floor_area,
+                primary_property_type, primary_floor_area,
+                second_property_type,  second_floor_area,
+                third_property_type,   third_floor_area,
+                electricity_kwh, natural_gas_kbtu, district_steam_kbtu,
+                fuel_oil_2_kbtu, fuel_oil_4_kbtu, fuel_oil_56_kbtu,
+                site_eui, weather_norm_site_eui, energy_star_score,
                 reported_ghg_emissions, reported_ghg_intensity
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', rows)
         conn.commit()
 
