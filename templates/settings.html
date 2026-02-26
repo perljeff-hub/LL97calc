@@ -69,6 +69,8 @@
             {% for period in modifiable_periods %}
             <td>
               <div class="factor-cell">
+                {% set is_locked = (fuel_key == 'electricity_kwh' and period == '2050_plus') %}
+                {% set cur_val = 0 if is_locked else user_factors.get(period, {}).get(fuel_key, default_factors[period][fuel_key]) %}
                 <input
                   type="number"
                   class="factor-input"
@@ -76,11 +78,9 @@
                   name="{{ period }}-{{ fuel_key }}"
                   step="0.0000001"
                   min="0"
-                  value="{{ user_factors.get(period, {}).get(fuel_key, default_factors[period][fuel_key]) }}"
+                  value="{{ cur_val }}"
                   data-default="{{ default_factors[period][fuel_key] }}"
-                  {% if fuel_key == 'electricity_kwh' and period == '2050_plus' %}
-                    value="0" readonly title="Required to be 0 by law in 2050+"
-                  {% endif %}
+                  {% if is_locked %}readonly title="Required to be 0 by law in 2050+"{% endif %}
                 />
                 <div class="factor-default">
                   Default: {{ "%.7f" | format(default_factors[period][fuel_key]) }}
