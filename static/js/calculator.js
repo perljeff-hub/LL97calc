@@ -161,20 +161,25 @@ async function performSearch(q) {
 }
 
 function populateFromBuilding(r) {
-  // Populate energy inputs
+  // Populate energy inputs (all already in natural units from the API)
   setValue('elec',   r.electricity_kwh);
   setValue('gas',    r.natural_gas_therms);
   setValue('steam',  r.district_steam_mlb);
   setValue('fo2',    r.fuel_oil_2_gal);
   setValue('fo4',    r.fuel_oil_4_gal);
 
-  // Populate occupancy (clear existing, add one row)
+  // Populate occupancy groups from LL84 data (up to 3 uses with per-use floor areas)
   const container = document.getElementById('occupancy-groups');
   container.innerHTML = '';
   occRowCount = 0;
-  const type = r.primary_property_type || '';
-  const area = r.gross_floor_area || '';
-  addOccRow(type, area);
+
+  const groups = r.occupancy_groups || [];
+  if (groups.length > 0) {
+    groups.forEach(g => addOccRow(g.property_type || '', g.floor_area || ''));
+  } else {
+    // Fallback: use total GFA with no property type pre-selected
+    addOccRow('', r.gross_floor_area || '');
+  }
 
   // Close search
   document.getElementById('search-results').classList.add('hidden');

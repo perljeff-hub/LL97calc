@@ -24,6 +24,28 @@ app.secret_key = os.environ.get('SECRET_KEY', 'll97-calc-secret-key-change-in-pr
 CORS(app)
 
 # ---------------------------------------------------------------------------
+# ESPM property type name normalizer
+# LL84 uses the same ESPM names as LL97, but spacing/capitalisation can vary.
+# Build a lowercase lookup once at startup.
+# ---------------------------------------------------------------------------
+_ESPM_LOWER = {t.lower(): t for t in ESPM_PROPERTY_TYPES}
+
+def normalize_espm_type(raw):
+    """Map a raw LL84 ESPM property type string to the canonical LL97 name."""
+    if not raw:
+        return ''
+    # Exact match (case-insensitive)
+    key = raw.strip().lower()
+    if key in _ESPM_LOWER:
+        return _ESPM_LOWER[key]
+    # Partial match — raw is contained in canonical, or vice-versa
+    for lower, canonical in _ESPM_LOWER.items():
+        if key in lower or lower in key:
+            return canonical
+    # No match — return as-is so the user can see what came from LL84
+    return raw.strip()
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -188,7 +210,10 @@ def search_buildings():
     q_like = f'%{q}%'
     rows = conn.execute('''
         SELECT bbl, property_name, address, borough, postcode,
-               year_ending, gross_floor_area, primary_property_type,
+               year_ending, gross_floor_area,
+               primary_property_type, primary_floor_area,
+               second_property_type,  second_floor_area,
+               third_property_type,   third_floor_area,
                electricity_kwh, natural_gas_kbtu, district_steam_kbtu,
                fuel_oil_2_kbtu, fuel_oil_4_kbtu,
                reported_ghg_emissions, energy_star_score
@@ -204,39 +229,59 @@ def search_buildings():
     results = []
     for row in rows:
         r = dict(row)
-        # Convert kBtu back to original units for display
-        ng_therms = None
-        if r['natural_gas_kbtu']:
-            ng_therms = round(r['natural_gas_kbtu'] / 100, 1)  # kBtu -> therms
 
-        steam_mlb = None
-        if r['district_steam_kbtu']:
-            steam_mlb = round(r['district_steam_kbtu'] / 1194, 3)  # kBtu -> Mlb
+        # Convert stored kBtu values to natural units for the calculator form
+        def kbtu_to(val, divisor):
+            return round(val / divisor, 1) if val else None
 
-        fo2_gal = None
-        if r['fuel_oil_2_kbtu']:
-            fo2_gal = round(r['fuel_oil_2_kbtu'] / 138.5, 0)
+        ng_therms  = kbtu_to(r['natural_gas_kbtu'],   100)      # kBtu → therms
+        steam_mlb  = kbtu_to(r['district_steam_kbtu'], 1194)     # kBtu → Mlb
+        fo2_gal    = kbtu_to(r['fuel_oil_2_kbtu'],     138.5)    # kBtu → gallons
+        fo4_gal    = kbtu_to(r['fuel_oil_4_kbtu'],     146.0)    # kBtu → gallons
+        # electricity_kwh is already stored as kWh (converted on import)
+        elec_kwh   = round(r['electricity_kwh'], 0) if r['electricity_kwh'] else None
 
-        fo4_gal = None
-        if r['fuel_oil_4_kbtu']:
-            fo4_gal = round(r['fuel_oil_4_kbtu'] / 146.0, 0)
+        # Build occupancy groups list (up to 3 uses from LL84)
+        # Normalize ESPM type names and only include rows with both type and area
+        total_gfa = r['gross_floor_area'] or 0
+        occupancy_groups = []
+        for type_col, area_col in [
+            ('primary_property_type', 'primary_floor_area'),
+            ('second_property_type',  'second_floor_area'),
+            ('third_property_type',   'third_floor_area'),
+        ]:
+            raw_type = r.get(type_col) or ''
+            area     = r.get(area_col)
+            norm_type = normalize_espm_type(raw_type)
+            if norm_type and area and area > 0:
+                occupancy_groups.append({
+                    'property_type': norm_type,
+                    'floor_area':    round(area, 0),
+                })
+
+        # If we have no per-use breakdown but do have a primary type + total GFA, use those
+        if not occupancy_groups and r.get('primary_property_type') and total_gfa:
+            occupancy_groups.append({
+                'property_type': normalize_espm_type(r['primary_property_type']),
+                'floor_area':    round(total_gfa, 0),
+            })
 
         results.append({
-            'bbl':                r['bbl'],
-            'property_name':      r['property_name'],
-            'address':            r['address'],
-            'borough':            r['borough'],
-            'postcode':           r['postcode'],
-            'year_ending':        r['year_ending'],
-            'gross_floor_area':   r['gross_floor_area'],
-            'primary_property_type': r['primary_property_type'],
-            'electricity_kwh':    r['electricity_kwh'],
+            'bbl':              r['bbl'],
+            'property_name':    r['property_name'],
+            'address':          r['address'],
+            'borough':          r['borough'],
+            'postcode':         r['postcode'],
+            'year_ending':      r['year_ending'],
+            'gross_floor_area': total_gfa,
+            'electricity_kwh':  elec_kwh,
             'natural_gas_therms': ng_therms,
             'district_steam_mlb': steam_mlb,
-            'fuel_oil_2_gal':     fo2_gal,
-            'fuel_oil_4_gal':     fo4_gal,
-            'reported_ghg':       r['reported_ghg_emissions'],
-            'energy_star_score':  r['energy_star_score'],
+            'fuel_oil_2_gal':   fo2_gal,
+            'fuel_oil_4_gal':   fo4_gal,
+            'occupancy_groups': occupancy_groups,
+            'reported_ghg':     r['reported_ghg_emissions'],
+            'energy_star_score': r['energy_star_score'],
         })
 
     return jsonify({'results': results})
