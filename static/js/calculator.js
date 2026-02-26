@@ -161,14 +161,24 @@ async function performSearch(q) {
 }
 
 function populateFromBuilding(r) {
-  // Populate energy inputs (all already in natural units from the API)
-  setValue('elec',   r.electricity_kwh);
-  setValue('gas',    r.natural_gas_therms);
-  setValue('steam',  r.district_steam_mlb);
-  setValue('fo2',    r.fuel_oil_2_gal);
-  setValue('fo4',    r.fuel_oil_4_gal);
+  // Step 1: zero out ALL energy fields first
+  ['elec', 'gas', 'steam', 'fo2', 'fo4'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
 
-  // Populate occupancy groups from LL84 data (up to 3 uses with per-use floor areas)
+  // Step 2: clear stale results and errors
+  document.getElementById('results-section').classList.add('hidden');
+  document.getElementById('error-msg').classList.add('hidden');
+
+  // Step 3: repopulate energy inputs (API returns natural units)
+  setValue('elec',  r.electricity_kwh);
+  setValue('gas',   r.natural_gas_therms);
+  setValue('steam', r.district_steam_mlb);
+  setValue('fo2',   r.fuel_oil_2_gal);
+  setValue('fo4',   r.fuel_oil_4_gal);
+
+  // Step 4: clear and repopulate occupancy groups
   const container = document.getElementById('occupancy-groups');
   container.innerHTML = '';
   occRowCount = 0;
@@ -181,11 +191,11 @@ function populateFromBuilding(r) {
     addOccRow('', r.gross_floor_area || '');
   }
 
-  // Close search
+  // Step 5: close search dropdown and update search field
   document.getElementById('search-results').classList.add('hidden');
   document.getElementById('search-input').value = r.property_name || r.address || '';
 
-  // Scroll to energy section
+  // Step 6: scroll to energy section
   document.getElementById('energy-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
