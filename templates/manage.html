@@ -26,7 +26,8 @@
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <a href="/manage" class="nav-link active" id="manage-nav-link">Manage</a>
-      <a href="/settings" class="nav-link">⚙ Settings</a>
+      <a href="/reduction-plan" class="nav-link">Reduction Plan</a>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
 </header>
@@ -51,14 +52,35 @@
 
   <!-- ── COMPLIANCE TIMELINE CHART ──────────────────────────────────────── -->
   <section class="card wide-card hidden" id="manage-chart-container">
-    <h2 class="card-title">
-      LL97 Compliance Timeline —
-      <span id="manage-building-name" class="manage-building-name-span"></span>
-    </h2>
-    <p class="card-desc">
-      Annual GHG emissions vs. emissions limits and projected fines, 2024–2050.
-      <span class="manage-legend-note"><span class="manage-fine-year-example">Red bold</span> years indicate non-compliance.</span>
-    </p>
+    <div class="manage-chart-header">
+      <div>
+        <h2 class="card-title">
+          LL97 Compliance Timeline —
+          <span id="manage-building-name" class="manage-building-name-span"></span>
+        </h2>
+        <p class="card-desc">
+          Annual GHG emissions (tCO₂e) vs. emissions limits and projected fines, 2024–2050.
+          <span class="manage-legend-note"><span class="manage-fine-year-example">Red bold</span> years indicate non-compliance under the selected scenario (or baseline).</span>
+        </p>
+      </div>
+      <a href="/reduction-plan" class="btn btn-ghost" id="manage-rp-btn" style="white-space:nowrap;align-self:flex-start">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2 12L6 8l4 4 4-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 6V2H8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Reduction Plan
+      </a>
+    </div>
+
+    <!-- Scenario selector (shown only when scenarios exist) -->
+    <div id="manage-scenario-bar" class="manage-scenario-bar hidden">
+      <span class="manage-scenario-label">Compare Scenario:</span>
+      <select id="manage-scenario-select" class="manage-scenario-select">
+        <option value="">None — Baseline Only</option>
+      </select>
+      <span id="manage-scenario-loading" class="manage-scenario-loading hidden">Computing…</span>
+    </div>
+
     <div class="manage-chart-wrapper">
       <canvas id="manage-chart"></canvas>
     </div>

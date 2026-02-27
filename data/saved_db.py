@@ -44,4 +44,50 @@ def create_saved_tables(conn):
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_save_name ON saved_buildings(save_name)'
     )
+
+    # ── Reduction Plan tables ────────────────────────────────────────────────
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS measures (
+            id                  INTEGER  PRIMARY KEY AUTOINCREMENT,
+            building_save_name  TEXT     NOT NULL,
+            name                TEXT     NOT NULL,
+            cost                REAL     DEFAULT 0,
+            elec_savings        REAL     DEFAULT 0,
+            gas_savings         REAL     DEFAULT 0,
+            steam_savings       REAL     DEFAULT 0,
+            oil2_savings        REAL     DEFAULT 0,
+            oil4_savings        REAL     DEFAULT 0,
+            created_at          DATETIME DEFAULT (datetime('now'))
+        )
+    ''')
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_measures_building ON measures(building_save_name)'
+    )
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS scenarios (
+            id                  INTEGER  PRIMARY KEY AUTOINCREMENT,
+            building_save_name  TEXT     NOT NULL,
+            name                TEXT     NOT NULL,
+            number              INTEGER  NOT NULL,
+            created_at          DATETIME DEFAULT (datetime('now')),
+            updated_at          DATETIME DEFAULT (datetime('now'))
+        )
+    ''')
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scenarios_building ON scenarios(building_save_name)'
+    )
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS scenario_measures (
+            id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER  NOT NULL,
+            measure_id  INTEGER  NOT NULL,
+            year        INTEGER  NOT NULL
+        )
+    ''')
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sm_scenario ON scenario_measures(scenario_id)'
+    )
+
     conn.commit()
