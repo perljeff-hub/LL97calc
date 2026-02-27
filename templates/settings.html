@@ -22,6 +22,7 @@
       </div>
     </div>
     <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <a href="/settings" class="nav-link active">⚙ Settings</a>
     </nav>
@@ -212,6 +213,23 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
   status.className = 'save-status saved';
   setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
 });
+
+// ── Active Building nav chip (read from sessionStorage) ────────────────────
+(function() {
+  try {
+    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    if (a && a.saveName) {
+      document.getElementById('active-building-nav').innerHTML =
+        `<span class="active-building-chip">`+
+        `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
+        `<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+        `<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+        `</svg>`+
+        `<span>${a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`+
+        `</span>`;
+    }
+  } catch(e) {}
+})();
 
 // Highlight modified cells
 document.querySelectorAll('.factor-input').forEach(input => {

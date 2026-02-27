@@ -4,12 +4,17 @@
 
 // ── STATE ──────────────────────────────────────────────────────────────────────
 let occRowCount = 0;
-// Tracks the save_name if this building was loaded from / saved to savedbuildings.db.
-// null = building has never been saved in this session.
+// save_name from savedbuildings.db — null until the building is saved or loaded from savedbuildings.
 let currentSaveName = null;
-// Full building metadata snapshot from the last search result selected.
-// Used when building the save payload so we preserve bbl/bin/address/etc.
+// Full search-result object for the building currently in the form.
 let currentBuildingData = null;
+// True whenever any form field has changed since the last load/save.
+let isDirty = false;
+// Suppresses dirty-marking during bulk form population (load / state restore).
+let _loading = false;
+
+const SESSION_KEY = 'll97_calc_state';  // sessionStorage key for form persistence
+const ACTIVE_KEY  = 'll97_active';      // sessionStorage key for nav chip (read by settings.html)
 
 // ── OCCUPANCY GROUP MANAGER ───────────────────────────────────────────────────
 function buildOccRow(index, defaultType = '', defaultArea = '') {
@@ -18,7 +23,6 @@ function buildOccRow(index, defaultType = '', defaultArea = '') {
   row.className = 'occ-row';
   row.id = id;
 
-  // Property type select
   const select = document.createElement('select');
   select.name = `occ-type-${index}`;
   select.id = `occ-type-${index}`;
@@ -33,8 +37,8 @@ function buildOccRow(index, defaultType = '', defaultArea = '') {
     if (t === defaultType) opt.selected = true;
     select.appendChild(opt);
   });
+  select.addEventListener('change', () => markDirty());
 
-  // Floor area input
   const areaWrap = document.createElement('div');
   areaWrap.className = 'occ-area';
   const areaInput = document.createElement('input');
@@ -45,9 +49,9 @@ function buildOccRow(index, defaultType = '', defaultArea = '') {
   areaInput.min = '0';
   areaInput.placeholder = 'Sq ft';
   areaInput.value = defaultArea;
+  areaInput.addEventListener('input', () => markDirty());
   areaWrap.appendChild(areaInput);
 
-  // Remove button
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.className = 'occ-remove';
@@ -56,6 +60,7 @@ function buildOccRow(index, defaultType = '', defaultArea = '') {
   removeBtn.addEventListener('click', () => {
     row.remove();
     updateRemoveButtons();
+    markDirty();
   });
 
   row.appendChild(select);
@@ -67,7 +72,6 @@ function buildOccRow(index, defaultType = '', defaultArea = '') {
 function addOccRow(type = '', area = '') {
   const container = document.getElementById('occupancy-groups');
   if (container.querySelectorAll('.occ-row').length === 0) {
-    // Add header row
     const header = document.createElement('div');
     header.className = 'occ-header';
     header.id = 'occ-header';
@@ -106,6 +110,134 @@ function getOccupancyGroups() {
     if (type && area > 0) groups.push({ property_type: type, floor_area: area });
   });
   return groups;
+}
+
+function getAllOccupancyRows() {
+  // Returns all rows (including blank), for sessionStorage snapshot.
+  const rows = [];
+  document.querySelectorAll('#occupancy-groups .occ-row').forEach(row => {
+    const idx = row.id.replace('occ-', '');
+    rows.push({
+      type: document.getElementById(`occ-type-${idx}`)?.value || '',
+      area: document.getElementById(`occ-area-${idx}`)?.value || '',
+    });
+  });
+  return rows;
+}
+
+// ── DIRTY STATE ───────────────────────────────────────────────────────────────
+function markDirty() {
+  if (_loading) return;
+  isDirty = true;
+  updateActiveBuildingNav();
+  saveFormState();
+}
+
+function markClean() {
+  isDirty = false;
+  updateActiveBuildingNav();
+}
+
+// ── ACTIVE BUILDING NAV CHIP ───────────────────────────────────────────────────
+function updateActiveBuildingNav() {
+  const nav = document.getElementById('active-building-nav');
+  if (!nav) return;
+
+  if (currentSaveName) {
+    const dotHtml = isDirty
+      ? '<span class="unsaved-dot" title="Unsaved changes">&#9679;</span>'
+      : '';
+    nav.innerHTML =
+      `<span class="active-building-chip">`+
+      `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
+      `<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+      `<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+      `</svg>`+
+      `<span class="active-building-chip-name">${esc(currentSaveName)}</span>`+
+      dotHtml+
+      `</span>`;
+  } else {
+    nav.innerHTML = '';
+  }
+
+  // Sync to sessionStorage so settings.html can read it
+  try {
+    if (currentSaveName) {
+      sessionStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: currentSaveName }));
+    } else {
+      sessionStorage.removeItem(ACTIVE_KEY);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// ── SESSION STORAGE ────────────────────────────────────────────────────────────
+function saveFormState() {
+  if (_loading) return;
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      saveName:     currentSaveName,
+      buildingData: currentBuildingData,
+      isDirty,
+      form: {
+        elec:  document.getElementById('elec')?.value  || '',
+        gas:   document.getElementById('gas')?.value   || '',
+        steam: document.getElementById('steam')?.value || '',
+        fo2:   document.getElementById('fo2')?.value   || '',
+        fo4:   document.getElementById('fo4')?.value   || '',
+      },
+      occRows: getAllOccupancyRows(),
+      resultsVisible: !document.getElementById('results-section')?.classList.contains('hidden'),
+    }));
+  } catch (e) { /* ignore storage errors */ }
+}
+
+function clearFormState() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(ACTIVE_KEY);
+  } catch (e) { /* ignore */ }
+}
+
+function restoreFormState() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+
+    _loading = true;
+
+    currentSaveName   = state.saveName   || null;
+    currentBuildingData = state.buildingData || null;
+    isDirty           = !!state.isDirty;
+
+    if (state.form) {
+      setValue('elec',  state.form.elec);
+      setValue('gas',   state.form.gas);
+      setValue('steam', state.form.steam);
+      setValue('fo2',   state.form.fo2);
+      setValue('fo4',   state.form.fo4);
+    }
+
+    if (state.occRows && state.occRows.length > 0) {
+      const container = document.getElementById('occupancy-groups');
+      container.innerHTML = '';
+      occRowCount = 0;
+      state.occRows.forEach(r => addOccRow(r.type, r.area));
+    }
+
+    _loading = false;
+
+    updateActiveBuildingNav();
+    updateSaveNameLabel();
+
+    if (state.resultsVisible) {
+      document.getElementById('save-action-row').classList.remove('hidden');
+    }
+    return true;
+  } catch (e) {
+    _loading = false;
+    return false;
+  }
 }
 
 // ── SEARCH ─────────────────────────────────────────────────────────────────────
@@ -154,7 +286,6 @@ async function performSearch(q) {
       item.className = 'search-result-item';
 
       if (r.source === 'saved') {
-        // Saved building — highlight as User Defined
         const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
         const sub = [r.address, r.borough, r.postcode].filter(Boolean).join(' ');
         item.innerHTML = `
@@ -163,7 +294,6 @@ async function performSearch(q) {
           <div class="sri-meta">${floor ? floor + ' &bull; ' : ''}Saved building</div>
         `;
       } else {
-        // LL84 building — existing display
         const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
         const es = r.energy_star_score ? `ES Score: ${r.energy_star_score}` : '';
         const binStr = r.bin ? `BIN: ${esc(r.bin)}` : '';
@@ -183,34 +313,31 @@ async function performSearch(q) {
 }
 
 function populateFromBuilding(r) {
-  // Track session state
+  _loading = true;
+
   currentBuildingData = r;
   currentSaveName = (r.source === 'saved') ? r.save_name : null;
-  updateSaveNameLabel();
 
-  // Step 1: zero out ALL energy fields first
-  ['elec', 'gas', 'steam', 'fo2', 'fo4'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-
-  // Step 2: clear stale results and errors
+  // Clear stale results
   document.getElementById('results-section').classList.add('hidden');
   document.getElementById('save-action-row').classList.add('hidden');
   document.getElementById('error-msg').classList.add('hidden');
 
-  // Step 3: repopulate energy inputs (API returns natural units)
+  // Energy inputs
+  ['elec', 'gas', 'steam', 'fo2', 'fo4'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
   setValue('elec',  r.electricity_kwh);
   setValue('gas',   r.natural_gas_therms);
   setValue('steam', r.district_steam_mlb);
   setValue('fo2',   r.fuel_oil_2_gal);
   setValue('fo4',   r.fuel_oil_4_gal);
 
-  // Step 4: clear and repopulate occupancy groups
+  // Occupancy groups
   const container = document.getElementById('occupancy-groups');
   container.innerHTML = '';
   occRowCount = 0;
-
   const groups = r.occupancy_groups || [];
   if (groups.length > 0) {
     groups.forEach(g => addOccRow(g.property_type || '', g.floor_area || ''));
@@ -218,18 +345,14 @@ function populateFromBuilding(r) {
     addOccRow('', r.gross_floor_area || '');
   }
 
-  // Step 5: populate Selected Building panel
+  // Selected Building panel
   const bldgSection = document.getElementById('selected-building-section');
   const bldgGrid = document.getElementById('bldg-info-grid');
-
   const makeItem = f => `<div class="bldg-info-item">
     <div class="bldg-info-label">${f.label}</div>
     <div class="bldg-info-value">${esc(String(f.value))}</div>
   </div>`;
-
-  // For saved buildings, use save_name as the label in the panel
   const displayName = (r.source === 'saved') ? r.save_name : (r.property_name || '—');
-
   const row1 = [
     { label: r.source === 'saved' ? 'Saved Name' : 'Property Name', value: displayName },
     { label: 'BBL',       value: r.bbl || '—' },
@@ -243,18 +366,21 @@ function populateFromBuilding(r) {
     { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
     { label: 'Energy Star Score',value: r.energy_star_score || '—' },
   ];
-
   bldgGrid.innerHTML =
     `<div class="bldg-info-row bldg-info-row-4">${row1.map(makeItem).join('')}</div>` +
     `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>`;
   bldgSection.classList.remove('hidden');
 
-  // Step 6: close search dropdown and update search field
+  // Close search dropdown
   document.getElementById('search-results').classList.add('hidden');
   document.getElementById('search-input').value =
     (r.source === 'saved') ? r.save_name : (r.property_name || r.address || '');
 
-  // Step 7: scroll to selected building section
+  _loading = false;
+  markClean();         // freshly loaded — treat as clean
+  updateSaveNameLabel();
+  saveFormState();     // persist so navigation restores form
+
   bldgSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -330,13 +456,11 @@ function getVal(id) {
 function renderResults(data) {
   const resultsSection = document.getElementById('results-section');
   resultsSection.classList.remove('hidden');
-
   renderCosts(data.utility_costs, data.total_floor_area);
   renderPeriods(data.results, data.total_floor_area);
-
-  // Show Save button whenever results are visible
   document.getElementById('save-action-row').classList.remove('hidden');
-
+  // Persist that results were shown so save row restores on return from settings
+  saveFormState();
   resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -370,23 +494,18 @@ function renderCosts(costs, totalSf) {
 function renderPeriods(results, totalSf) {
   const grid = document.getElementById('periods-grid');
   grid.innerHTML = '';
-
   const periods = window.COMPLIANCE_PERIODS || [];
   periods.forEach(period => {
     const r = results[period];
     if (!r) return;
-
     const isZero = r.limit === 0;
     const compliant = r.compliant;
     const statusClass = isZero ? 'zero-limit' : (compliant ? 'compliant' : 'non-compliant');
     const statusText = isZero ? '2050 Target: 0' : (compliant ? '✓ Compliant' : '✗ Non-Compliant');
-
     const col = document.createElement('div');
     col.className = `period-col ${statusClass}`;
-
     const pct = r.limit > 0 ? Math.min(100, (r.emissions / r.limit) * 100) : 0;
     const barClass = compliant ? 'ok' : 'over';
-
     const breakdownSources = [
       { key: 'electricity',    label: 'Electricity' },
       { key: 'natural_gas',    label: 'Natural Gas' },
@@ -402,16 +521,10 @@ function renderPeriods(results, totalSf) {
         const val = breakdown[src.key] || 0;
         const pctStr = totalEmissions > 0 ? ((val / totalEmissions) * 100).toFixed(1) : '0';
         return `<div class="mini-bar-item">
-          <div class="mini-bar-top">
-            <span>${src.label}</span>
-            <span>${fmtTons(val)}t (${pctStr}%)</span>
-          </div>
-          <div class="mini-bar-track">
-            <div class="mini-bar-fill bar-${src.key}" style="width:${pctStr}%"></div>
-          </div>
+          <div class="mini-bar-top"><span>${src.label}</span><span>${fmtTons(val)}t (${pctStr}%)</span></div>
+          <div class="mini-bar-track"><div class="mini-bar-fill bar-${src.key}" style="width:${pctStr}%"></div></div>
         </div>`;
       }).join('');
-
     col.innerHTML = `
       <div class="period-header">${esc(r.label)}</div>
       <div class="period-status">${statusText}</div>
@@ -446,16 +559,15 @@ function renderPeriods(results, totalSf) {
         <div class="period-breakdown">
           <div class="period-breakdown-title">Emissions Breakdown</div>
           ${miniBarHtml}
-        </div>
-        ` : ''}
-      </div>
-    `;
+        </div>` : ''}
+      </div>`;
     grid.appendChild(col);
   });
 }
 
 // ── CLEAR ─────────────────────────────────────────────────────────────────────
 function clearAll() {
+  _loading = true;
   ['elec','gas','steam','fo2','fo4'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -465,25 +577,23 @@ function clearAll() {
   document.getElementById('results-section').classList.add('hidden');
   document.getElementById('save-action-row').classList.add('hidden');
   document.getElementById('error-msg').classList.add('hidden');
-
-  // Hide and clear selected building section
   document.getElementById('selected-building-section').classList.add('hidden');
   document.getElementById('bldg-info-grid').innerHTML = '';
-
-  // Reset occupancy to one empty row
   const container = document.getElementById('occupancy-groups');
   container.innerHTML = '';
   occRowCount = 0;
+  _loading = false;
   addOccRow();
 
-  // Reset save state
-  currentSaveName = null;
+  currentSaveName    = null;
   currentBuildingData = null;
+  isDirty            = false;
+  updateActiveBuildingNav();
   updateSaveNameLabel();
+  clearFormState();
 }
 
 // ── SAVE ──────────────────────────────────────────────────────────────────────
-
 document.getElementById('save-building-btn').addEventListener('click', openSaveModal);
 document.getElementById('save-modal-close').addEventListener('click', closeSaveModal);
 document.getElementById('save-modal-backdrop').addEventListener('click', e => {
@@ -495,9 +605,9 @@ document.addEventListener('keydown', e => {
 
 function openSaveModal() {
   const body = document.getElementById('save-modal-body');
+  document.getElementById('save-modal-title').textContent = 'Save Building';
 
   if (currentSaveName) {
-    // Building was previously saved — offer overwrite OR save as new name
     body.innerHTML = `
       <div class="save-option">
         <p class="save-option-desc">Update the existing saved record:</p>
@@ -523,7 +633,6 @@ function openSaveModal() {
       if (e.key === 'Enter') saveAsNew();
     });
   } else {
-    // Building has never been saved — show Save As form only
     body.innerHTML = `
       <div class="save-option">
         <label class="input-label" for="save-name-input">Save As Building Name:</label>
@@ -547,27 +656,22 @@ function openSaveModal() {
 function saveAsNew() {
   const nameInput = document.getElementById('save-name-input');
   const name = (nameInput?.value || '').trim();
-  if (!name) {
-    showSaveNameError('Please enter a name.');
-    nameInput?.focus();
-    return;
-  }
+  if (!name) { showSaveNameError('Please enter a name.'); nameInput?.focus(); return; }
   doSave(name, false);
 }
 
 function closeSaveModal() {
   document.getElementById('save-modal-backdrop').classList.add('hidden');
+  document.getElementById('save-modal-title').textContent = 'Save Building';
 }
 
 function showSaveNameError(msg) {
   const el = document.getElementById('save-name-error');
-  if (el) {
-    el.textContent = msg;
-    el.classList.remove('hidden');
-  }
+  if (el) { el.textContent = msg; el.classList.remove('hidden'); }
 }
 
-async function doSave(saveName, overwrite) {
+// doSave: saves to server. If onSuccess is provided, calls it instead of showing toast.
+async function doSave(saveName, overwrite, onSuccess = null) {
   const building = collectCurrentBuilding();
   try {
     const resp = await fetch('/api/save-building', {
@@ -576,23 +680,29 @@ async function doSave(saveName, overwrite) {
       body: JSON.stringify({ save_name: saveName, overwrite, building }),
     });
     const data = await resp.json();
-
     if (!resp.ok) {
-      if (data.error === 'name_exists') {
-        showSaveNameError('That name is already taken — please choose a different name.');
-      } else {
-        showSaveNameError(data.error || 'Save failed. Please try again.');
-      }
-      return;
+      showSaveNameError(
+        data.error === 'name_exists'
+          ? 'That name is already taken — please choose a different name.'
+          : (data.error || 'Save failed. Please try again.')
+      );
+      return false;
     }
-
     // Success
     currentSaveName = saveName;
+    markClean();
     updateSaveNameLabel();
+    saveFormState();
     closeSaveModal();
-    showSaveToast(`Saved as "${saveName}"`);
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      showSaveToast(`Saved as "${saveName}"`);
+    }
+    return true;
   } catch (e) {
     showSaveNameError('Network error. Please try again.');
+    return false;
   }
 }
 
@@ -609,7 +719,6 @@ function collectCurrentBuilding() {
     gross_floor_area:  bd.gross_floor_area  || null,
     energy_star_score: bd.energy_star_score || '',
     reported_ghg:      bd.reported_ghg      || null,
-    // Current form values (may differ from LL84 data if user edited them)
     electricity_kwh:   getVal('elec'),
     natural_gas_therms: getVal('gas'),
     district_steam_mlb: getVal('steam'),
@@ -633,6 +742,99 @@ function showSaveToast(msg) {
     toast.classList.add('fade-out');
     setTimeout(() => toast.classList.add('hidden'), 600);
   }, 2800);
+}
+
+// ── NAVIGATION GUARD ─────────────────────────────────────────────────────────
+function needsNavGuard() {
+  // Guard if the user has made changes since the last load/save
+  return isDirty;
+}
+
+// Intercept nav link clicks on the calculator page
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', e => {
+    if (link.classList.contains('active')) return; // already on this page
+    if (needsNavGuard()) {
+      e.preventDefault();
+      openNavGuardModal(link.href);
+    }
+  });
+});
+
+// Native browser guard (back/forward/close)
+window.addEventListener('beforeunload', e => {
+  if (needsNavGuard()) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+function openNavGuardModal(href) {
+  const body = document.getElementById('save-modal-body');
+  document.getElementById('save-modal-title').textContent = 'Unsaved Changes';
+
+  const navigateAway = () => {
+    // Clear state so returning to calculator starts fresh
+    clearFormState();
+    window.location.href = href;
+  };
+
+  const nameLabel = currentSaveName
+    ? `&ldquo;${esc(currentSaveName)}&rdquo;`
+    : 'this building';
+
+  const saveAsBlock = `
+    <div class="save-option">
+      <label class="input-label" for="save-name-input">Save As New Name:</label>
+      <div class="save-input-row">
+        <input type="text" class="form-input" id="save-name-input" placeholder="Enter a new name…" autocomplete="off" />
+        <button class="btn btn-secondary" id="ng-save-as-btn">Save As New</button>
+      </div>
+      <div id="save-name-error" class="save-name-error hidden"></div>
+    </div>`;
+
+  if (currentSaveName) {
+    body.innerHTML = `
+      <p class="nav-guard-msg">You have unsaved changes to ${nameLabel}.</p>
+      <div class="save-option">
+        <button class="btn btn-primary save-overwrite-btn" id="ng-overwrite-btn">
+          Save and Overwrite ${nameLabel}
+        </button>
+      </div>
+      ${saveAsBlock}
+      <div class="save-divider">— or —</div>
+      <div class="save-option">
+        <button class="btn btn-ghost" id="ng-discard-btn">Continue without saving</button>
+      </div>`;
+    document.getElementById('ng-overwrite-btn').addEventListener('click', () => {
+      doSave(currentSaveName, true, navigateAway);
+    });
+  } else {
+    body.innerHTML = `
+      <p class="nav-guard-msg">You have unsaved changes that will be lost.</p>
+      ${saveAsBlock}
+      <div class="save-divider">— or —</div>
+      <div class="save-option">
+        <button class="btn btn-ghost" id="ng-discard-btn">Continue without saving</button>
+      </div>`;
+  }
+
+  const saveAsBtn = document.getElementById('ng-save-as-btn');
+  const saveNameInput = document.getElementById('save-name-input');
+  const doSaveAs = () => {
+    const name = (saveNameInput?.value || '').trim();
+    if (!name) { showSaveNameError('Please enter a name.'); saveNameInput?.focus(); return; }
+    doSave(name, false, navigateAway);
+  };
+  saveAsBtn.addEventListener('click', doSaveAs);
+  saveNameInput?.addEventListener('keydown', e => { if (e.key === 'Enter') doSaveAs(); });
+  document.getElementById('ng-discard-btn').addEventListener('click', () => {
+    closeSaveModal();
+    navigateAway();
+  });
+
+  document.getElementById('save-modal-backdrop').classList.remove('hidden');
+  setTimeout(() => saveNameInput?.focus(), 50);
 }
 
 // ── FORMATTING HELPERS ─────────────────────────────────────────────────────────
@@ -659,11 +861,21 @@ function esc(str) {
 
 // ── INIT ───────────────────────────────────────────────────────────────────────
 (async function init() {
-  addOccRow();
+  // Restore state from sessionStorage (navigating back from Settings, etc.)
+  const restored = restoreFormState();
+  if (!restored) {
+    // Fresh start — add one blank occupancy row
+    addOccRow();
+  }
 
   document.getElementById('add-occ-btn').addEventListener('click', () => {
     const count = document.querySelectorAll('#occupancy-groups .occ-row').length;
-    if (count < 4) addOccRow();
+    if (count < 4) { addOccRow(); markDirty(); }
+  });
+
+  // Dirty listeners on energy inputs
+  ['elec','gas','steam','fo2','fo4'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', markDirty);
   });
 
   // Check DB status
