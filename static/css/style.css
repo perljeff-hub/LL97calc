@@ -112,6 +112,11 @@ body {
 }
 .nav-link:hover { background: rgba(255,255,255,.15); color: #fff; }
 .nav-link.active { background: rgba(255,255,255,.2); color: #fff; font-weight: 600; }
+.nav-link-disabled {
+  opacity: .38;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
 
 /* ── LAYOUT ────────────────────────────────────────────────────────────────── */
 .main-container {
@@ -770,6 +775,38 @@ body {
   background: #e8f6f0;
   color: var(--green);
   border: 1px solid #a9dfbf;
+}
+
+/* ── MANAGE PAGE ─────────────────────────────────────────────────────────── */
+.manage-status-card {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+}
+.manage-status-text {
+  color: var(--gray-500);
+  font-size: .95rem;
+}
+.manage-status-text a {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.manage-building-name-span {
+  color: var(--blue);
+  font-weight: 700;
+}
+.manage-legend-note {
+  margin-left: .5rem;
+  font-size: .82rem;
+  color: var(--gray-500);
+}
+.manage-fine-year-example {
+  color: #c0392b;
+  font-weight: bold;
+}
+.manage-chart-wrapper {
+  position: relative;
+  height: 440px;
+  margin-top: 1rem;
 }
 
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
