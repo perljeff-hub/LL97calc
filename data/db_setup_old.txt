@@ -31,28 +31,29 @@ PAGE_SIZE = 1000
 # Each entry: (our_internal_name, [candidate_api_names_in_preference_order])
 FIELD_MAP = [
     # Identifiers
-    ('bbl',                  ['nyc_borough_block_and_lot', 'bbl']),
-    ('bin',                  ['nyc_building_identification']),
+    ('bbl',                  ['bbl_10_digits', 'bbl']),
     ('property_name',        ['property_name']),
     ('parent_property_name', ['parent_property_name']),
-    ('address',              ['address_1']),
+    ('address',              ['address_1_self_reported', 'address1', 'address']),
     ('borough',              ['borough']),
-    ('postcode',             ['postal_code']),
+    ('postcode',             ['postcode', 'zip_code']),
     ('year_ending',          ['year_ending', 'reporting_year']),
     # Building characteristics
-    ('gross_floor_area',     ['property_gfa_self_reported']),
+    ('gross_floor_area',     ['dof_gross_floor_area', 'gross_floor_area_buildings_sq_ft']),
     ('primary_property_type',['largest_property_use_type', 'primary_property_type_self_selected']),
-    ('primary_floor_area',   ['largest_property_use_type_1']),
-    ('second_property_type', ['_2nd_largest_property_use', 'second_largest_property_use_type']),
-    ('second_floor_area',    ['_2nd_largest_property_use_1']),
-    ('third_property_type',  ['_3rd_largest_property_use',  'third_largest_property_use_type']),
-    ('third_floor_area',     ['_3rd_largest_property_use_1']),
-    # Energy — LL84 reports ALL energy values in kBtu, except electricity, which is in kWh.
-   
+    ('primary_floor_area',   ['largest_property_use_type_gross_floor_area',
+                               'largest_property_use_gross_floor_area']),
+    ('second_property_type', ['second_largest_property_use', 'second_largest_property_use_type']),
+    ('second_floor_area',    ['second_largest_property_use_gross_floor_area']),
+    ('third_property_type',  ['third_largest_property_use',  'third_largest_property_use_type']),
+    ('third_floor_area',     ['third_largest_property_use_gross_floor_area']),
+    # Energy — LL84 reports ALL energy values in kBtu.
+    # Electricity is converted to kWh on import (÷ 3.412142).
     # All combustion fuels remain stored as kBtu; conversions to natural units
     # (therms, Mlb, gallons) happen at display/search time in app.py.
-    ('electricity_kwh',      ['electricity_use_grid_purchase_1']),        # this field is in kWh
-
+    ('electricity_kwh',      ['electricity_use_grid_purchase',        # kBtu in LL84 → converted to kWh
+                               'electricity_use_grid_purchase_k_btu', # older schema name
+                               'electricity_kwh']),
     # Natural gas — stored in kBtu; displayed as therms (÷ 100)
     ('natural_gas_kbtu',     ['natural_gas_use_kbtu', 'natural_gas_use_k_btu',
                                'natural_gas_use_therms']),             # therms—flag for conversion
@@ -70,7 +71,11 @@ FIELD_MAP = [
     ('reported_ghg_intensity',['ghg_intensity_metric_tons_co2e_ft2', 'ghg_emissions_intensity_metric_tons']),
 ]
 
-
+# ALL electricity fields from LL84 are in kBtu — always convert to kWh (÷ 3.412142)
+_ELEC_KBTU_FIELDS = {
+    'electricity_use_grid_purchase',
+    'electricity_use_grid_purchase_k_btu',
+}
 # Fields that might be in therms and should be stored as kBtu (* 100)
 _GAS_THERM_FIELDS = {'natural_gas_use_therms'}
 
@@ -94,7 +99,6 @@ def create_tables(conn):
         CREATE TABLE IF NOT EXISTS buildings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bbl TEXT,
-            bin TEXT,
             property_name TEXT,
             parent_property_name TEXT,
             address TEXT,
@@ -123,7 +127,6 @@ def create_tables(conn):
     ''')
 
     conn.execute('CREATE INDEX IF NOT EXISTS idx_bbl ON buildings(bbl)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_bin ON buildings(bin)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_address ON buildings(address)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_property_name ON buildings(property_name)')
 
@@ -149,16 +152,16 @@ def _extract_row(record, detected_schema):
     for our_name, candidates in FIELD_MAP:
         raw_val, src_field = _resolve_field(record, candidates)
 
-        if our_name in ('bbl', 'bin', 'property_name', 'parent_property_name', 'address',
+        if our_name in ('bbl', 'property_name', 'parent_property_name', 'address',
                         'borough', 'postcode', 'year_ending', 'primary_property_type',
                         'second_property_type', 'third_property_type', 'energy_star_score'):
             row.append(raw_val or '')
-    #    elif our_name == 'electricity_kwh':
-    #        val = safe_float(raw_val)
-    #        # LL84 reports electricity in kBtu — convert to kWh (÷ 3.412142)
-    #        if val is not None and src_field in _ELEC_KBTU_FIELDS:
-    #            val = round(val / 3.412142, 1)
-    #        row.append(val)
+        elif our_name == 'electricity_kwh':
+            val = safe_float(raw_val)
+            # LL84 reports electricity in kBtu — convert to kWh (÷ 3.412142)
+            if val is not None and src_field in _ELEC_KBTU_FIELDS:
+                val = round(val / 3.412142, 1)
+            row.append(val)
         elif our_name == 'natural_gas_kbtu':
             val = safe_float(raw_val)
             # Rare legacy schema reports therms — convert to kBtu (* 100)
@@ -251,7 +254,7 @@ def import_ll84_data(verbose=True, force=False):
 
         conn.executemany('''
             INSERT INTO buildings (
-                bbl, bin, property_name, parent_property_name, address, borough,
+                bbl, property_name, parent_property_name, address, borough,
                 postcode, year_ending, gross_floor_area,
                 primary_property_type, primary_floor_area,
                 second_property_type,  second_floor_area,
@@ -260,7 +263,7 @@ def import_ll84_data(verbose=True, force=False):
                 fuel_oil_2_kbtu, fuel_oil_4_kbtu, fuel_oil_56_kbtu,
                 site_eui, weather_norm_site_eui, energy_star_score,
                 reported_ghg_emissions, reported_ghg_intensity
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', rows)
         conn.commit()
 
