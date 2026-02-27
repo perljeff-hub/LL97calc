@@ -191,12 +191,39 @@ function populateFromBuilding(r) {
     addOccRow('', r.gross_floor_area || '');
   }
 
-  // Step 5: close search dropdown and update search field
+  // Step 5: populate Selected Building panel
+  const bldgSection = document.getElementById('selected-building-section');
+  const bldgGrid = document.getElementById('bldg-info-grid');
+  const bldgFields = [
+    { label: 'Property Name',    value: r.property_name || '—' },
+    { label: 'BBL',              value: r.bbl || '—' },
+    { label: 'Address',          value: r.address || '—' },
+    { label: 'Borough',          value: r.borough || '—' },
+    { label: 'Zip Code',         value: r.postcode || '—' },
+    { label: 'Data Year',        value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
+    { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
+    { label: 'Energy Star Score',value: r.energy_star_score || '—' },
+    { label: 'Reported GHG',     value: r.reported_ghg_emissions ? fmtTons(r.reported_ghg_emissions) + ' tCO₂e' : '—' },
+    { label: 'Electricity',      value: r.electricity_kwh ? fmtNum(r.electricity_kwh) + ' kWh' : '—' },
+    { label: 'Natural Gas',      value: r.natural_gas_therms ? fmtNum(r.natural_gas_therms) + ' therms' : '—' },
+    { label: 'District Steam',   value: r.district_steam_mlb ? r.district_steam_mlb + ' Mlb' : '—' },
+    { label: '#2 Fuel Oil',      value: r.fuel_oil_2_gal ? fmtNum(r.fuel_oil_2_gal) + ' gal' : '—' },
+    { label: '#4 Fuel Oil',      value: r.fuel_oil_4_gal ? fmtNum(r.fuel_oil_4_gal) + ' gal' : '—' },
+  ];
+  bldgGrid.innerHTML = bldgFields.map(f =>
+    `<div class="bldg-info-item">
+      <div class="bldg-info-label">${f.label}</div>
+      <div class="bldg-info-value">${esc(String(f.value))}</div>
+    </div>`
+  ).join('');
+  bldgSection.classList.remove('hidden');
+
+  // Step 6: close search dropdown and update search field
   document.getElementById('search-results').classList.add('hidden');
   document.getElementById('search-input').value = r.property_name || r.address || '';
 
-  // Step 6: scroll to energy section
-  document.getElementById('energy-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Step 7: scroll to selected building section
+  bldgSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function setValue(id, val) {
@@ -274,7 +301,6 @@ function renderResults(data) {
 
   renderCosts(data.utility_costs, data.total_floor_area);
   renderPeriods(data.results, data.total_floor_area);
-  renderBreakdown(data.results['2024_2029']);
 
   resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -326,6 +352,32 @@ function renderPeriods(results, totalSf) {
     const pct = r.limit > 0 ? Math.min(100, (r.emissions / r.limit) * 100) : 0;
     const barClass = compliant ? 'ok' : 'over';
 
+    // Build per-period emissions breakdown HTML
+    const breakdownSources = [
+      { key: 'electricity',    label: 'Electricity' },
+      { key: 'natural_gas',    label: 'Natural Gas' },
+      { key: 'district_steam', label: 'District Steam' },
+      { key: 'fuel_oil_2',     label: '#2 Fuel Oil' },
+      { key: 'fuel_oil_4',     label: '#4 Fuel Oil' },
+    ];
+    const breakdown = r.breakdown || {};
+    const totalEmissions = r.emissions || 0;
+    const miniBarHtml = breakdownSources
+      .filter(src => (breakdown[src.key] || 0) > 0)
+      .map(src => {
+        const val = breakdown[src.key] || 0;
+        const pctStr = totalEmissions > 0 ? ((val / totalEmissions) * 100).toFixed(1) : '0';
+        return `<div class="mini-bar-item">
+          <div class="mini-bar-top">
+            <span>${src.label}</span>
+            <span>${fmtTons(val)}t (${pctStr}%)</span>
+          </div>
+          <div class="mini-bar-track">
+            <div class="mini-bar-fill bar-${src.key}" style="width:${pctStr}%"></div>
+          </div>
+        </div>`;
+      }).join('');
+
     col.innerHTML = `
       <div class="period-header">${esc(r.label)}</div>
       <div class="period-status">${statusText}</div>
@@ -355,6 +407,13 @@ function renderPeriods(results, totalSf) {
           <div class="period-metric-label">Annual Penalty</div>
           <div class="penalty-value ${r.penalty === 0 ? 'zero' : ''}">${r.penalty === 0 ? '$0' : fmtDollars(r.penalty)}</div>
         </div>
+        ${miniBarHtml ? `
+        <div class="period-divider"></div>
+        <div class="period-breakdown">
+          <div class="period-breakdown-title">Emissions Breakdown</div>
+          ${miniBarHtml}
+        </div>
+        ` : ''}
       </div>
     `;
     grid.appendChild(col);
@@ -406,6 +465,10 @@ function clearAll() {
   document.getElementById('search-results').classList.add('hidden');
   document.getElementById('results-section').classList.add('hidden');
   document.getElementById('error-msg').classList.add('hidden');
+
+  // Hide and clear selected building section
+  document.getElementById('selected-building-section').classList.add('hidden');
+  document.getElementById('bldg-info-grid').innerHTML = '';
 
   // Reset occupancy to one empty row
   const container = document.getElementById('occupancy-groups');
