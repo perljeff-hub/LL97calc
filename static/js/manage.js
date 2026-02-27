@@ -71,8 +71,8 @@ document.addEventListener('DOMContentLoaded', async function init() {
 
 function buildChart(buildingName, results) {
   const years        = [];
-  const emissionsKg  = [];  // tCO2e → kgCO2e (*1000), absolute building total
-  const limitsKg     = [];
+  const emissionsTCO2 = [];  // tCO2e absolute building total
+  const limitsTCO2    = [];
   const annualFines  = [];  // dollars
   const hasFine      = [];
 
@@ -82,8 +82,8 @@ function buildChart(buildingName, results) {
     if (!r) continue;
     for (const yr of pyears) {
       years.push(String(yr));
-      emissionsKg.push(Math.round(r.emissions * 1000));
-      limitsKg.push(Math.round(r.limit * 1000));
+      emissionsTCO2.push(Math.round(r.emissions * 100) / 100);
+      limitsTCO2.push(Math.round(r.limit * 100) / 100);
       annualFines.push(Math.round(r.penalty));
       hasFine.push(r.penalty > 0);
     }
@@ -124,7 +124,7 @@ function buildChart(buildingName, results) {
         {
           type:            'line',
           label:           'Baseline GHG Emissions',
-          data:            emissionsKg,
+          data:            emissionsTCO2,
           borderColor:     '#c0392b',
           backgroundColor: 'rgba(192, 57, 43, 0.07)',
           yAxisID:         'y',
@@ -139,7 +139,7 @@ function buildChart(buildingName, results) {
         {
           type:            'line',
           label:           'Emissions Limit',
-          data:            limitsKg,
+          data:            limitsTCO2,
           borderColor:     '#27ae60',
           backgroundColor: 'rgba(39, 174, 96, 0.07)',
           yAxisID:         'y',
@@ -191,7 +191,7 @@ function buildChart(buildingName, results) {
               if (ctx.dataset.yAxisID === 'y2') {
                 return `  ${ctx.dataset.label}: $${v.toLocaleString('en-US')}`;
               }
-              return `  ${ctx.dataset.label}: ${v.toLocaleString('en-US')} kgCO₂e`;
+              return `  ${ctx.dataset.label}: ${v.toLocaleString('en-US')} tCO₂e`;
             },
           },
         },
@@ -218,7 +218,7 @@ function buildChart(buildingName, results) {
           position: 'left',
           title: {
             display: true,
-            text:    'GHG Emissions (kgCO₂e)',
+            text:    'GHG Emissions (tCO₂e)',
             font:    { size: 12, weight: 'bold' },
             color:   '#c0392b',
           },
