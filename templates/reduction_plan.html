@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reduction Plan — NYC LL97 Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#1a5276"/>
+        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="header-title">NYC LL97 Calculator</div>
+        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/" class="nav-link">Calculate</a>
+      <a href="/manage" class="nav-link">Manage</a>
+      <a href="/reduction-plan" class="nav-link active">Reduction Plan</a>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <!-- No active building -->
+  <div id="rp-no-building" class="card manage-status-card hidden">
+    <p class="manage-status-text">
+      No saved building selected. Please
+      <a href="/">load and save a building</a> on the Calculate tab first.
+    </p>
+  </div>
+
+  <!-- Loading -->
+  <div id="rp-loading" class="card manage-status-card">
+    <p class="manage-status-text">Loading Reduction Plan…</p>
+  </div>
+
+  <!-- Error -->
+  <div id="rp-error" class="error-msg hidden" style="margin:0"></div>
+
+  <!-- ── MAIN CONTENT ──────────────────────────────────────────────────── -->
+  <div id="rp-main" class="hidden">
+
+    <!-- Scenario toolbar -->
+    <div class="rp-scenario-toolbar card">
+      <div class="rp-scenario-left">
+        <span class="rp-scenario-label">Scenario:</span>
+        <select id="rp-scenario-select" class="rp-scenario-select"></select>
+      </div>
+      <div class="rp-scenario-right">
+        <div class="rp-save-group">
+          <button id="rp-save-btn" class="btn btn-save">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 2h9l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              <rect x="5" y="9" width="6" height="5" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+              <rect x="5" y="2" width="5" height="3" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+            </svg>
+            Save
+          </button>
+          <div class="rp-save-dropdown-wrap">
+            <button id="rp-save-dropdown-btn" class="btn btn-save rp-save-caret" title="More save options">&#9660;</button>
+            <div id="rp-save-dropdown" class="rp-save-dropdown hidden">
+              <button id="rp-save-new-btn" class="rp-save-dropdown-item">Save As New Scenario</button>
+            </div>
+          </div>
+        </div>
+        <span id="rp-save-status" class="rp-save-status"></span>
+      </div>
+    </div>
+
+    <!-- Two-column: Measures + Timeline -->
+    <div class="rp-workspace">
+
+      <!-- LEFT: Measures panel -->
+      <div class="rp-measures-panel card">
+        <h2 class="card-title">Energy / Carbon Reduction Measures</h2>
+
+        <!-- Upload / template row -->
+        <div class="rp-upload-row">
+          <label class="btn btn-secondary btn-sm rp-upload-label" title="Upload CSV or Excel file">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 1v9M5 4l3-3 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Upload CSV / Excel
+            <input type="file" id="rp-upload-input" accept=".csv,.xlsx,.xls" class="hidden" />
+          </label>
+          <a href="/api/measures/template" class="btn btn-ghost btn-sm" download>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 1v9M5 10l3 3 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Template
+          </a>
+        </div>
+        <div id="rp-upload-status" class="rp-upload-status hidden"></div>
+
+        <!-- Add measure form (toggleable) -->
+        <div class="rp-add-section">
+          <button id="rp-add-toggle" class="btn btn-ghost btn-sm rp-add-toggle">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Add Measure Manually
+          </button>
+          <div id="rp-add-form" class="rp-add-form hidden">
+            <div class="rp-form-grid">
+              <div class="input-group rp-form-full">
+                <label class="input-label">Measure Name <span class="req-star">*</span></label>
+                <input type="text" id="rp-name" class="form-input" placeholder="e.g. LED Lighting Retrofit" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Cost <span class="unit">($)</span></label>
+                <input type="number" id="rp-cost" class="form-input" placeholder="0" min="0" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Electricity Savings <span class="unit">(kWh)</span></label>
+                <input type="number" id="rp-elec" class="form-input" placeholder="0" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Natural Gas Savings <span class="unit">(therms)</span></label>
+                <input type="number" id="rp-gas" class="form-input" placeholder="0" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Steam Savings <span class="unit">(mLbs)</span></label>
+                <input type="number" id="rp-steam" class="form-input" placeholder="0" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Oil #2 Savings <span class="unit">(gal)</span></label>
+                <input type="number" id="rp-oil2" class="form-input" placeholder="0" />
+              </div>
+              <div class="input-group">
+                <label class="input-label">Oil #4 Savings <span class="unit">(gal)</span></label>
+                <input type="number" id="rp-oil4" class="form-input" placeholder="0" />
+              </div>
+            </div>
+            <div class="rp-form-actions">
+              <button id="rp-add-confirm" class="btn btn-primary btn-sm">Add Measure</button>
+              <button id="rp-add-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+              <span id="rp-add-error" class="rp-inline-error hidden"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rp-measures-divider"></div>
+
+        <!-- Measures list -->
+        <div id="rp-measures-list" class="rp-measures-list">
+          <p class="rp-empty-hint" id="rp-measures-empty">
+            No measures yet. Add one manually or upload a file above.
+          </p>
+        </div>
+      </div>
+
+      <!-- RIGHT: Timeline -->
+      <div class="rp-timeline-panel card">
+        <h2 class="card-title">
+          Timeline
+          <span class="rp-timeline-hint">Drag measures from the list and drop them onto a year</span>
+        </h2>
+        <div id="rp-timeline" class="rp-timeline">
+          <!-- Rows injected by JS -->
+        </div>
+      </div>
+
+    </div><!-- /.rp-workspace -->
+
+    <!-- Summary table -->
+    <div id="rp-summary-section" class="card hidden">
+      <h2 class="card-title">Scenario Summary</h2>
+      <p class="card-desc">
+        Years with measures applied — one-time capital costs and annual energy savings from that year forward.
+      </p>
+      <div class="rp-summary-table-wrap">
+        <table class="rp-summary-table" id="rp-summary-table">
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Measures Applied</th>
+              <th>One-Time Cost</th>
+              <th>Elec Savings <span class="th-unit">(kWh)</span></th>
+              <th>Gas Savings <span class="th-unit">(therms)</span></th>
+              <th>Steam Savings <span class="th-unit">(mLbs)</span></th>
+              <th>Oil #2 Savings <span class="th-unit">(gal)</span></th>
+              <th>Oil #4 Savings <span class="th-unit">(gal)</span></th>
+            </tr>
+          </thead>
+          <tbody id="rp-summary-tbody"></tbody>
+          <tfoot id="rp-summary-tfoot"></tfoot>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /#rp-main -->
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<!-- Active building chip -->
+<script>
+(function() {
+  try {
+    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    if (a && a.saveName) {
+      const esc = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      document.getElementById('active-building-nav').innerHTML =
+        '<span class="active-building-chip">' +
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
+        '<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
+        '<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
+        '</svg><span>' + esc + '</span></span>';
+    }
+  } catch(e) {}
+})();
+</script>
+
+<script src="{{ url_for('static', filename='js/reduction_plan.js') }}"></script>
+</body>
+</html>

@@ -174,15 +174,28 @@ function updateActiveBuildingNav() {
 
 function syncManageLink() {
   const link = document.getElementById('manage-nav-link');
-  if (!link) return;
-  if (currentSaveName) {
-    link.setAttribute('href', '/manage');
-    link.classList.remove('nav-link-disabled');
-    link.removeAttribute('title');
-  } else {
-    link.removeAttribute('href');
-    link.classList.add('nav-link-disabled');
-    link.setAttribute('title', 'Save or Load a Saved Building to enable Manage');
+  if (link) {
+    if (currentSaveName) {
+      link.setAttribute('href', '/manage');
+      link.classList.remove('nav-link-disabled');
+      link.removeAttribute('title');
+    } else {
+      link.removeAttribute('href');
+      link.classList.add('nav-link-disabled');
+      link.setAttribute('title', 'Save or Load a Saved Building to enable Manage');
+    }
+  }
+  const rpLink = document.getElementById('rp-nav-link');
+  if (rpLink) {
+    if (currentSaveName) {
+      rpLink.setAttribute('href', '/reduction-plan');
+      rpLink.classList.remove('nav-link-disabled');
+      rpLink.removeAttribute('title');
+    } else {
+      rpLink.removeAttribute('href');
+      rpLink.classList.add('nav-link-disabled');
+      rpLink.setAttribute('title', 'Save or Load a Saved Building to enable Reduction Plan');
+    }
   }
 }
 

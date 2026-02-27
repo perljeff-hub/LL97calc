@@ -582,6 +582,366 @@ def espm_types():
     return jsonify({'types': ESPM_PROPERTY_TYPES})
 
 
+# ---------------------------------------------------------------------------
+# Reduction Plan routes
+# ---------------------------------------------------------------------------
+
+def _get_period_for_year(year):
+    """Map a calendar year to its LL97 compliance period key."""
+    if year <= 2029: return '2024_2029'
+    if year <= 2034: return '2030_2034'
+    if year <= 2039: return '2035_2039'
+    if year <= 2049: return '2040_2049'
+    return '2050_plus'
+
+
+@app.route('/reduction-plan')
+def reduction_plan():
+    return render_template('reduction_plan.html')
+
+
+# ── Measures ────────────────────────────────────────────────────────────────
+
+@app.route('/api/measures')
+def get_measures():
+    building = request.args.get('building', '').strip()
+    if not building:
+        return jsonify({'error': 'building param required'}), 400
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    rows = conn.execute(
+        'SELECT * FROM measures WHERE building_save_name = ? ORDER BY created_at, id',
+        (building,)
+    ).fetchall()
+    conn.close()
+    return jsonify({'measures': [dict(r) for r in rows]})
+
+
+@app.route('/api/measures', methods=['POST'])
+def create_measure():
+    data = request.get_json()
+    building = (data.get('building_save_name') or '').strip()
+    name     = (data.get('name') or '').strip()
+    if not building or not name:
+        return jsonify({'error': 'building_save_name and name required'}), 400
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    cur = conn.execute('''
+        INSERT INTO measures
+            (building_save_name, name, cost, elec_savings, gas_savings,
+             steam_savings, oil2_savings, oil4_savings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        building, name,
+        _safe_float(data.get('cost'))          or 0,
+        _safe_float(data.get('elec_savings'))  or 0,
+        _safe_float(data.get('gas_savings'))   or 0,
+        _safe_float(data.get('steam_savings')) or 0,
+        _safe_float(data.get('oil2_savings'))  or 0,
+        _safe_float(data.get('oil4_savings'))  or 0,
+    ))
+    row = conn.execute('SELECT * FROM measures WHERE id = ?', (cur.lastrowid,)).fetchone()
+    conn.commit()
+    conn.close()
+    return jsonify({'measure': dict(row)}), 201
+
+
+@app.route('/api/measures/<int:measure_id>', methods=['DELETE'])
+def delete_measure(measure_id):
+    conn = get_saved_db_connection()
+    conn.execute('DELETE FROM scenario_measures WHERE measure_id = ?', (measure_id,))
+    conn.execute('DELETE FROM measures WHERE id = ?', (measure_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+# ── Scenarios ───────────────────────────────────────────────────────────────
+
+@app.route('/api/scenarios')
+def get_scenarios():
+    building = request.args.get('building', '').strip()
+    if not building:
+        return jsonify({'error': 'building param required'}), 400
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    rows = conn.execute(
+        'SELECT id, name, number, created_at, updated_at FROM scenarios '
+        'WHERE building_save_name = ? ORDER BY number',
+        (building,)
+    ).fetchall()
+    conn.close()
+    return jsonify({'scenarios': [dict(r) for r in rows]})
+
+
+@app.route('/api/scenarios/<int:scenario_id>')
+def get_scenario(scenario_id):
+    conn = get_saved_db_connection()
+    scenario = conn.execute(
+        'SELECT * FROM scenarios WHERE id = ?', (scenario_id,)
+    ).fetchone()
+    if not scenario:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    placements = conn.execute('''
+        SELECT sm.id, sm.measure_id, sm.year,
+               m.name AS measure_name, m.cost,
+               m.elec_savings, m.gas_savings, m.steam_savings,
+               m.oil2_savings, m.oil4_savings
+        FROM scenario_measures sm
+        JOIN measures m ON sm.measure_id = m.id
+        WHERE sm.scenario_id = ?
+        ORDER BY sm.year, m.name
+    ''', (scenario_id,)).fetchall()
+    conn.close()
+    return jsonify({
+        'scenario':   dict(scenario),
+        'placements': [dict(p) for p in placements],
+    })
+
+
+@app.route('/api/scenarios/save', methods=['POST'])
+def save_scenario():
+    data               = request.get_json()
+    building           = (data.get('building_save_name') or '').strip()
+    scenario_id        = data.get('scenario_id')   # None → create new
+    placements         = data.get('placements', []) # [{measure_id, year}]
+
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+
+    if scenario_id:
+        conn.execute(
+            "UPDATE scenarios SET updated_at = datetime('now') WHERE id = ?",
+            (scenario_id,)
+        )
+    else:
+        if not building:
+            conn.close()
+            return jsonify({'error': 'building_save_name required for new scenario'}), 400
+        max_num = conn.execute(
+            'SELECT COALESCE(MAX(number), 0) FROM scenarios WHERE building_save_name = ?',
+            (building,)
+        ).fetchone()[0]
+        new_num = max_num + 1
+        cur = conn.execute(
+            'INSERT INTO scenarios (building_save_name, name, number) VALUES (?, ?, ?)',
+            (building, f'Scenario {new_num}', new_num)
+        )
+        scenario_id = cur.lastrowid
+
+    # Replace placements
+    conn.execute('DELETE FROM scenario_measures WHERE scenario_id = ?', (scenario_id,))
+    for p in placements:
+        mid  = p.get('measure_id')
+        year = p.get('year')
+        if mid and year:
+            conn.execute(
+                'INSERT INTO scenario_measures (scenario_id, measure_id, year) VALUES (?, ?, ?)',
+                (scenario_id, mid, year)
+            )
+
+    conn.commit()
+    scenario = conn.execute('SELECT * FROM scenarios WHERE id = ?', (scenario_id,)).fetchone()
+    conn.close()
+    return jsonify({'scenario': dict(scenario)})
+
+
+# ── Scenario chart computation ───────────────────────────────────────────────
+
+@app.route('/api/scenario-compute', methods=['POST'])
+def scenario_compute():
+    data        = request.get_json()
+    scenario_id = data.get('scenario_id')
+    if not scenario_id:
+        return jsonify({'error': 'scenario_id required'}), 400
+
+    energy = {
+        'electricity_kwh':    _safe_float(data.get('electricity_kwh'))    or 0,
+        'natural_gas_therms': _safe_float(data.get('natural_gas_therms')) or 0,
+        'district_steam_mlb': _safe_float(data.get('district_steam_mlb')) or 0,
+        'fuel_oil_2_gal':     _safe_float(data.get('fuel_oil_2_gal'))     or 0,
+        'fuel_oil_4_gal':     _safe_float(data.get('fuel_oil_4_gal'))     or 0,
+    }
+    occupancy_groups = []
+    for og in (data.get('occupancy_groups') or []):
+        pt   = og.get('property_type', '').strip()
+        area = _safe_float(og.get('floor_area'))
+        if pt and area and area > 0:
+            occupancy_groups.append({'property_type': pt, 'floor_area': area})
+    if not occupancy_groups:
+        return jsonify({'error': 'occupancy_groups required'}), 400
+
+    conn = get_saved_db_connection()
+    placements = conn.execute('''
+        SELECT sm.year,
+               m.elec_savings, m.gas_savings, m.steam_savings,
+               m.oil2_savings, m.oil4_savings
+        FROM scenario_measures sm
+        JOIN measures m ON sm.measure_id = m.id
+        WHERE sm.scenario_id = ?
+    ''', (scenario_id,)).fetchall()
+    conn.close()
+
+    # Accumulate savings per year
+    savings_by_year = {}
+    for p in placements:
+        yr = p['year']
+        if yr not in savings_by_year:
+            savings_by_year[yr] = dict(elec=0, gas=0, steam=0, oil2=0, oil4=0)
+        savings_by_year[yr]['elec']  += (p['elec_savings']  or 0)
+        savings_by_year[yr]['gas']   += (p['gas_savings']   or 0)
+        savings_by_year[yr]['steam'] += (p['steam_savings'] or 0)
+        savings_by_year[yr]['oil2']  += (p['oil2_savings']  or 0)
+        savings_by_year[yr]['oil4']  += (p['oil4_savings']  or 0)
+
+    user_overrides  = session.get('utility_factors', {})
+    utility_factors = get_utility_factors(user_overrides)
+    cumulative      = dict(elec=0, gas=0, steam=0, oil2=0, oil4=0)
+    yearly_data     = []
+
+    for year in range(2024, 2051):
+        if year in savings_by_year:
+            for k in cumulative:
+                cumulative[k] += savings_by_year[year][k]
+
+        adj = {
+            'electricity_kwh':    max(0, energy['electricity_kwh']    - cumulative['elec']),
+            'natural_gas_therms': max(0, energy['natural_gas_therms'] - cumulative['gas']),
+            'district_steam_mlb': max(0, energy['district_steam_mlb'] - cumulative['steam']),
+            'fuel_oil_2_gal':     max(0, energy['fuel_oil_2_gal']     - cumulative['oil2']),
+            'fuel_oil_4_gal':     max(0, energy['fuel_oil_4_gal']     - cumulative['oil4']),
+        }
+        period    = _get_period_for_year(year)
+        emissions = calculate_emissions(adj, utility_factors)[period]['total']
+        limit     = calculate_limit(occupancy_groups, period)
+        fine      = calculate_penalty(emissions, limit)
+        yearly_data.append({
+            'year':      year,
+            'emissions': round(emissions, 4),
+            'limit':     round(limit, 4),
+            'fine':      round(fine, 2),
+        })
+
+    return jsonify({'yearly_data': yearly_data})
+
+
+# ── Measures upload & template ───────────────────────────────────────────────
+
+@app.route('/api/upload-measures', methods=['POST'])
+def upload_measures():
+    building = request.form.get('building_save_name', '').strip()
+    if not building:
+        return jsonify({'error': 'building_save_name required'}), 400
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    filename = (f.filename or '').lower()
+    rows_raw = []
+
+    try:
+        if filename.endswith('.csv'):
+            import csv, io
+            content = f.read().decode('utf-8-sig')
+            reader  = csv.DictReader(io.StringIO(content))
+            rows_raw = list(reader)
+        elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+            import openpyxl
+            wb = openpyxl.load_workbook(f, data_only=True)
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in next(ws.iter_rows(max_row=1))]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if any(v is not None for v in row):
+                    rows_raw.append(dict(zip(headers, row)))
+        else:
+            return jsonify({'error': 'Only .csv or .xlsx files accepted'}), 400
+    except Exception as exc:
+        return jsonify({'error': f'File parsing error: {exc}'}), 400
+
+    # Flexible header map (lower-case key → field name)
+    HMAP = {
+        'measure name':                    'name',
+        'name':                            'name',
+        'cost ($)':                        'cost',
+        'cost':                            'cost',
+        'electricity savings (kwh)':       'elec_savings',
+        'electricity savings':             'elec_savings',
+        'elec savings (kwh)':              'elec_savings',
+        'natural gas savings (therms)':    'gas_savings',
+        'natural gas savings':             'gas_savings',
+        'gas savings (therms)':            'gas_savings',
+        'steam savings (mlbs)':            'steam_savings',
+        'steam savings (mlb)':             'steam_savings',
+        'steam savings':                   'steam_savings',
+        'oil #2 savings (gal)':            'oil2_savings',
+        'oil #2 savings':                  'oil2_savings',
+        'oil2 savings (gal)':              'oil2_savings',
+        'oil #4 savings (gal)':            'oil4_savings',
+        'oil #4 savings':                  'oil4_savings',
+        'oil4 savings (gal)':              'oil4_savings',
+    }
+
+    conn    = get_saved_db_connection()
+    create_saved_tables(conn)
+    created = []
+    errors  = []
+
+    for i, row in enumerate(rows_raw, start=2):
+        norm = {}
+        for k, v in row.items():
+            field = HMAP.get(str(k or '').strip().lower())
+            if field:
+                norm[field] = v
+        name = str(norm.get('name') or '').strip()
+        if not name:
+            errors.append(f'Row {i}: missing Measure Name — skipped')
+            continue
+        cur = conn.execute('''
+            INSERT INTO measures
+                (building_save_name, name, cost, elec_savings, gas_savings,
+                 steam_savings, oil2_savings, oil4_savings)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            building, name,
+            _safe_float(norm.get('cost'))          or 0,
+            _safe_float(norm.get('elec_savings'))  or 0,
+            _safe_float(norm.get('gas_savings'))   or 0,
+            _safe_float(norm.get('steam_savings')) or 0,
+            _safe_float(norm.get('oil2_savings'))  or 0,
+            _safe_float(norm.get('oil4_savings'))  or 0,
+        ))
+        created.append(dict(conn.execute(
+            'SELECT * FROM measures WHERE id = ?', (cur.lastrowid,)
+        ).fetchone()))
+
+    conn.commit()
+    conn.close()
+    return jsonify({'created': created, 'errors': errors})
+
+
+@app.route('/api/measures/template')
+def measures_template():
+    import csv, io
+    from flask import Response
+    buf = io.StringIO()
+    w   = csv.writer(buf)
+    w.writerow([
+        'Measure Name', 'Cost ($)',
+        'Electricity Savings (kWh)', 'Natural Gas Savings (therms)',
+        'Steam Savings (mLbs)', 'Oil #2 Savings (gal)', 'Oil #4 Savings (gal)',
+    ])
+    w.writerow(['LED Lighting Retrofit',  50000, 100000, 0,    0, 0, 0])
+    w.writerow(['Boiler Replacement',    120000,      0, 5000, 0, 0, 0])
+    w.writerow(['Solar PV Installation', 200000,  80000, 0,    0, 0, 0])
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=reduction_measures_template.csv'},
+    )
+
+
 @app.route('/api/db-status')
 def db_status():
     if not os.path.exists(DB_PATH):

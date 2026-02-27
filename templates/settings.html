@@ -25,7 +25,8 @@
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <a id="manage-nav-link" class="nav-link nav-link-disabled" title="Save or Load a Saved Building to enable Manage">Manage</a>
-      <a href="/settings" class="nav-link active">⚙ Settings</a>
+      <a id="rp-nav-link" class="nav-link nav-link-disabled" title="Save or Load a Saved Building to enable Reduction Plan">Reduction Plan</a>
+      <a href="/settings" class="nav-link active">&#9881; Settings</a>
     </nav>
   </div>
 </header>
@@ -228,9 +229,11 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
         `</svg>`+
         `<span>${a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`+
         `</span>`;
-      // Enable Manage nav link
+      // Enable Manage + Reduction Plan nav links
       const ml = document.getElementById('manage-nav-link');
       if (ml) { ml.href = '/manage'; ml.classList.remove('nav-link-disabled'); ml.removeAttribute('title'); }
+      const rl = document.getElementById('rp-nav-link');
+      if (rl) { rl.href = '/reduction-plan'; rl.classList.remove('nav-link-disabled'); rl.removeAttribute('title'); }
     }
   } catch(e) {}
 })();
