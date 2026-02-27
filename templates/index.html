@@ -23,7 +23,7 @@
       </div>
     </div>
     <nav class="header-nav">
-      <a href="/" class="nav-link active">Calculator</a>
+      <a href="/" class="nav-link active">Calculate</a>
       <a href="/settings" class="nav-link">⚙ Settings</a>
     </nav>
   </div>
@@ -43,8 +43,14 @@
     <div id="db-status-msg" class="info-msg hidden"></div>
   </section>
 
+  <!-- ── SELECTED BUILDING ────────────────────────────────────────────────── -->
+  <section class="card hidden" id="selected-building-section">
+    <h2 class="card-title">Selected Building</h2>
+    <div class="bldg-info-grid" id="bldg-info-grid"></div>
+  </section>
+
   <!-- ── ENERGY INPUTS ────────────────────────────────────────────────────── -->
-  <div class="two-col">
+  <div class="three-col">
 
     <section class="card" id="energy-section">
       <h2 class="card-title">Annual Energy Consumption</h2>
@@ -98,23 +104,23 @@
         <input type="number" id="p-fo4" class="form-input" min="0" step="0.01" value="2.90" />
       </div>
     </section>
+
+    <!-- ── OCCUPANCY GROUPS ──────────────────────────────────────────────── -->
+    <section class="card" id="occupancy-section">
+      <h2 class="card-title">Building Occupancy &amp; Floor Area</h2>
+      <p class="card-desc">
+        Select up to 4 ESPM property types and enter the gross floor area for each.
+        The total floor area of all entries should equal the building's total gross floor area.
+        <br><em>Note: From 2026 onward, LL97 requires ESPM property types (not NYC Building Code occupancy groups).</em>
+      </p>
+
+      <div id="occupancy-groups">
+        <!-- rows inserted by JS -->
+      </div>
+
+      <button class="btn btn-ghost" id="add-occ-btn">+ Add Another Occupancy Type</button>
+    </section>
   </div>
-
-  <!-- ── OCCUPANCY GROUPS ─────────────────────────────────────────────────── -->
-  <section class="card" id="occupancy-section">
-    <h2 class="card-title">Building Occupancy &amp; Floor Area</h2>
-    <p class="card-desc">
-      Select up to 4 ESPM property types and enter the gross floor area for each.
-      The total floor area of all entries should equal the building's total gross floor area.
-      <br><em>Note: From 2026 onward, LL97 requires ESPM property types (not NYC Building Code occupancy groups).</em>
-    </p>
-
-    <div id="occupancy-groups">
-      <!-- rows inserted by JS -->
-    </div>
-
-    <button class="btn btn-ghost" id="add-occ-btn">+ Add Another Occupancy Type</button>
-  </section>
 
   <!-- ── CALCULATE BUTTON ─────────────────────────────────────────────────── -->
   <div class="calc-action-row">
@@ -142,13 +148,6 @@
           <div class="periods-grid" id="periods-grid"></div>
         </div>
       </div>
-    </section>
-
-    <!-- Emissions Breakdown -->
-    <section class="card" id="breakdown-card">
-      <h2 class="card-title">Emissions Breakdown by Source</h2>
-      <p class="card-desc">How each energy source contributes to your 2024–2029 GHG emissions.</p>
-      <div id="breakdown-bars"></div>
     </section>
 
   </section>
