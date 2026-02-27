@@ -279,7 +279,7 @@ def search_buildings():
     conn = get_db_connection()
     q_like = f'%{q}%'
     rows = conn.execute('''
-        SELECT bbl, property_name, address, borough, postcode,
+        SELECT bbl, bin, property_name, address, borough, postcode,
                year_ending, gross_floor_area,
                primary_property_type, primary_floor_area,
                second_property_type,  second_floor_area,
@@ -289,11 +289,12 @@ def search_buildings():
                reported_ghg_emissions, energy_star_score
         FROM buildings
         WHERE bbl = ?
+           OR bin = ?
            OR UPPER(address) LIKE UPPER(?)
            OR UPPER(property_name) LIKE UPPER(?)
         ORDER BY year_ending DESC, property_name
         LIMIT 20
-    ''', (q, q_like, q_like)).fetchall()
+    ''', (q, q, q_like, q_like)).fetchall()
     conn.close()
 
     results = []
@@ -348,6 +349,7 @@ def search_buildings():
 
         results.append({
             'bbl':              r['bbl'],
+            'bin':              r['bin'],
             'property_name':    r['property_name'],
             'address':          r['address'],
             'borough':          r['borough'],

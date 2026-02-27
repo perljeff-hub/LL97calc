@@ -147,9 +147,10 @@ async function performSearch(q) {
       item.className = 'search-result-item';
       const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
       const es = r.energy_star_score ? `ES Score: ${r.energy_star_score}` : '';
+      const binStr = r.bin ? `BIN: ${esc(r.bin)}` : '';
       item.innerHTML = `
         <div class="sri-main">${esc(r.property_name || r.address || 'Unknown')}</div>
-        <div class="sri-sub">${esc(r.address || '')} ${esc(r.borough || '')} ${esc(r.postcode || '')} &bull; BBL: ${esc(r.bbl || '')}</div>
+        <div class="sri-sub">${esc(r.address || '')} ${esc(r.borough || '')} ${esc(r.postcode || '')} &bull; BBL: ${esc(r.bbl || '')}${binStr ? ` &bull; ${binStr}` : ''}</div>
         <div class="sri-meta">${floor}${floor && es ? ' &bull; ' : ''}${es}${r.year_ending ? ` &bull; Data year: ${r.year_ending.substring(0,4)}` : ''}</div>
       `;
       item.addEventListener('click', () => populateFromBuilding(r));
@@ -194,28 +195,31 @@ function populateFromBuilding(r) {
   // Step 5: populate Selected Building panel
   const bldgSection = document.getElementById('selected-building-section');
   const bldgGrid = document.getElementById('bldg-info-grid');
-  const bldgFields = [
-    { label: 'Property Name',    value: r.property_name || '—' },
-    { label: 'BBL',              value: r.bbl || '—' },
+
+  const makeItem = f => `<div class="bldg-info-item">
+    <div class="bldg-info-label">${f.label}</div>
+    <div class="bldg-info-value">${esc(String(f.value))}</div>
+  </div>`;
+
+  // Row 1: Property Name, BBL, BIN, Data Year
+  const row1 = [
+    { label: 'Property Name', value: r.property_name || '—' },
+    { label: 'BBL',           value: r.bbl || '—' },
+    { label: 'BIN',           value: r.bin || '—' },
+    { label: 'Data Year',     value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
+  ];
+  // Row 2: Address, Borough, Zip Code, Gross Floor Area, Energy Star Score
+  const row2 = [
     { label: 'Address',          value: r.address || '—' },
     { label: 'Borough',          value: r.borough || '—' },
     { label: 'Zip Code',         value: r.postcode || '—' },
-    { label: 'Data Year',        value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
     { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
     { label: 'Energy Star Score',value: r.energy_star_score || '—' },
-    { label: 'Reported GHG',     value: r.reported_ghg_emissions ? fmtTons(r.reported_ghg_emissions) + ' tCO₂e' : '—' },
-    { label: 'Electricity',      value: r.electricity_kwh ? fmtNum(r.electricity_kwh) + ' kWh' : '—' },
-    { label: 'Natural Gas',      value: r.natural_gas_therms ? fmtNum(r.natural_gas_therms) + ' therms' : '—' },
-    { label: 'District Steam',   value: r.district_steam_mlb ? r.district_steam_mlb + ' Mlb' : '—' },
-    { label: '#2 Fuel Oil',      value: r.fuel_oil_2_gal ? fmtNum(r.fuel_oil_2_gal) + ' gal' : '—' },
-    { label: '#4 Fuel Oil',      value: r.fuel_oil_4_gal ? fmtNum(r.fuel_oil_4_gal) + ' gal' : '—' },
   ];
-  bldgGrid.innerHTML = bldgFields.map(f =>
-    `<div class="bldg-info-item">
-      <div class="bldg-info-label">${f.label}</div>
-      <div class="bldg-info-value">${esc(String(f.value))}</div>
-    </div>`
-  ).join('');
+
+  bldgGrid.innerHTML =
+    `<div class="bldg-info-row bldg-info-row-4">${row1.map(makeItem).join('')}</div>` +
+    `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>`;
   bldgSection.classList.remove('hidden');
 
   // Step 6: close search dropdown and update search field
