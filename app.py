@@ -18,6 +18,9 @@ from data.emission_factors import (
     COMPLIANCE_PERIODS, PERIOD_LABELS, MODIFIABLE_PERIODS, MODIFIABLE_FUELS
 )
 from data.db_setup import get_db_connection, import_ll84_data, DB_PATH
+from data.saved_db import (
+    get_saved_db_connection, create_saved_tables, SAVED_DB_PATH
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'll97-calc-secret-key-change-in-prod')
@@ -268,16 +271,61 @@ def get_settings():
 
 @app.route('/api/search')
 def search_buildings():
-    """Search LL84 database by address, BBL, or property name."""
+    """Search LL84 and savedbuildings databases by address, BBL, BIN, or name."""
     q = request.args.get('q', '').strip()
     if len(q) < 3:
         return jsonify({'results': []})
 
+    q_like = f'%{q}%'
+    results = []
+
+    # ── 1. Query savedbuildings.db first so saved buildings appear at the top ──
+    if os.path.exists(SAVED_DB_PATH):
+        try:
+            sconn = get_saved_db_connection()
+            srows = sconn.execute('''
+                SELECT * FROM saved_buildings
+                WHERE save_name LIKE ?
+                   OR UPPER(address)       LIKE UPPER(?)
+                   OR UPPER(property_name) LIKE UPPER(?)
+                   OR source_bbl = ?
+                   OR source_bin = ?
+                ORDER BY saved_at DESC
+                LIMIT 10
+            ''', (q_like, q_like, q_like, q, q)).fetchall()
+            sconn.close()
+            for row in srows:
+                r = dict(row)
+                results.append({
+                    'source':             'saved',
+                    'save_name':          r['save_name'],
+                    'bbl':                r['source_bbl'] or '',
+                    'bin':                r['source_bin'] or '',
+                    'property_name':      r['property_name'] or '',
+                    'address':            r['address'] or '',
+                    'borough':            r['borough'] or '',
+                    'postcode':           r['postcode'] or '',
+                    'year_ending':        r['year_ending'] or '',
+                    'gross_floor_area':   r['gross_floor_area'],
+                    'energy_star_score':  r['energy_star_score'] or '',
+                    'electricity_kwh':    r['electricity_kwh'],
+                    'natural_gas_therms': r['natural_gas_therms'],
+                    'district_steam_mlb': r['district_steam_mlb'],
+                    'fuel_oil_2_gal':     r['fuel_oil_2_gal'],
+                    'fuel_oil_4_gal':     r['fuel_oil_4_gal'],
+                    'occupancy_groups':   json.loads(r['occupancy_groups'] or '[]'),
+                    'reported_ghg':       r['reported_ghg'],
+                })
+        except Exception:
+            pass
+
+    # ── 2. Query LL84 database ─────────────────────────────────────────────────
     if not os.path.exists(DB_PATH):
-        return jsonify({'results': [], 'warning': 'LL84 database not yet initialized. Run db_setup.py.'})
+        if not results:
+            return jsonify({'results': [], 'warning': 'LL84 database not yet initialized. Run db_setup.py.'})
+        return jsonify({'results': results})
 
     conn = get_db_connection()
-    q_like = f'%{q}%'
     rows = conn.execute('''
         SELECT bbl, bin, property_name, address, borough, postcode,
                year_ending, gross_floor_area,
@@ -297,7 +345,6 @@ def search_buildings():
     ''', (q, q, q_like, q_like)).fetchall()
     conn.close()
 
-    results = []
     for row in rows:
         r = dict(row)
 
@@ -313,9 +360,6 @@ def search_buildings():
         elec_kwh   = round(r['electricity_kwh'], 0) if r['electricity_kwh'] else None
 
         # Build occupancy groups list (up to 3 uses from LL84).
-        # Include ESPM property types even when per-use floor areas are NULL —
-        # this happens when the DB was imported before the *_floor_area columns
-        # were added, or when the LL84 API doesn't provide them.
         total_gfa = r['gross_floor_area'] or 0
         occupancy_groups = []
         for type_col, area_col in [
@@ -327,7 +371,7 @@ def search_buildings():
             area      = r.get(area_col)
             norm_type = normalize_espm_type(raw_type)
             if not norm_type:
-                continue                          # no type → skip slot entirely
+                continue
             floor_area = round(float(area), 0) if (area is not None and float(area) > 0) else None
             occupancy_groups.append({
                 'property_type': norm_type,
@@ -338,16 +382,13 @@ def search_buildings():
         if occupancy_groups:
             any_area = any(g['floor_area'] for g in occupancy_groups)
             if not any_area and total_gfa:
-                # No per-use areas at all (old DB import) — assign total GFA to the
-                # primary type so the user has a sensible starting value to adjust.
-                # 2nd/3rd types are left blank so the user knows to fill them in.
                 occupancy_groups[0]['floor_area'] = round(total_gfa, 0)
         else:
-            # No property types at all — give a blank row so the UI shows something
             if total_gfa:
                 occupancy_groups.append({'property_type': '', 'floor_area': round(total_gfa, 0)})
 
         results.append({
+            'source':           'll84',
             'bbl':              r['bbl'],
             'bin':              r['bin'],
             'property_name':    r['property_name'],
@@ -367,6 +408,85 @@ def search_buildings():
         })
 
     return jsonify({'results': results})
+
+
+@app.route('/api/save-building', methods=['POST'])
+def save_building():
+    """Save or overwrite a building in savedbuildings.db."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+
+    save_name = (data.get('save_name') or '').strip()
+    overwrite  = bool(data.get('overwrite', False))
+    b          = data.get('building', {})
+
+    if not save_name:
+        return jsonify({'error': 'save_name is required'}), 400
+
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+
+    existing = conn.execute(
+        'SELECT id FROM saved_buildings WHERE save_name = ?', (save_name,)
+    ).fetchone()
+
+    if existing and not overwrite:
+        conn.close()
+        return jsonify({'error': 'name_exists'}), 409
+
+    row = {
+        'save_name':          save_name,
+        'source_bbl':         b.get('bbl') or '',
+        'source_bin':         b.get('bin') or '',
+        'property_name':      b.get('property_name') or '',
+        'address':            b.get('address') or '',
+        'borough':            b.get('borough') or '',
+        'postcode':           b.get('postcode') or '',
+        'year_ending':        b.get('year_ending') or '',
+        'gross_floor_area':   _safe_float(b.get('gross_floor_area')),
+        'energy_star_score':  b.get('energy_star_score') or '',
+        'electricity_kwh':    _safe_float(b.get('electricity_kwh')),
+        'natural_gas_therms': _safe_float(b.get('natural_gas_therms')),
+        'district_steam_mlb': _safe_float(b.get('district_steam_mlb')),
+        'fuel_oil_2_gal':     _safe_float(b.get('fuel_oil_2_gal')),
+        'fuel_oil_4_gal':     _safe_float(b.get('fuel_oil_4_gal')),
+        'occupancy_groups':   json.dumps(b.get('occupancy_groups') or []),
+        'reported_ghg':       _safe_float(b.get('reported_ghg')),
+    }
+
+    if existing and overwrite:
+        conn.execute('''
+            UPDATE saved_buildings SET
+                saved_at = datetime('now'),
+                source_bbl = :source_bbl, source_bin = :source_bin,
+                property_name = :property_name, address = :address,
+                borough = :borough, postcode = :postcode, year_ending = :year_ending,
+                gross_floor_area = :gross_floor_area, energy_star_score = :energy_star_score,
+                electricity_kwh = :electricity_kwh, natural_gas_therms = :natural_gas_therms,
+                district_steam_mlb = :district_steam_mlb, fuel_oil_2_gal = :fuel_oil_2_gal,
+                fuel_oil_4_gal = :fuel_oil_4_gal, occupancy_groups = :occupancy_groups,
+                reported_ghg = :reported_ghg
+            WHERE save_name = :save_name
+        ''', row)
+    else:
+        conn.execute('''
+            INSERT INTO saved_buildings (
+                save_name, source_bbl, source_bin, property_name, address,
+                borough, postcode, year_ending, gross_floor_area, energy_star_score,
+                electricity_kwh, natural_gas_therms, district_steam_mlb,
+                fuel_oil_2_gal, fuel_oil_4_gal, occupancy_groups, reported_ghg
+            ) VALUES (
+                :save_name, :source_bbl, :source_bin, :property_name, :address,
+                :borough, :postcode, :year_ending, :gross_floor_area, :energy_star_score,
+                :electricity_kwh, :natural_gas_therms, :district_steam_mlb,
+                :fuel_oil_2_gal, :fuel_oil_4_gal, :occupancy_groups, :reported_ghg
+            )
+        ''', row)
+
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'save_name': save_name})
 
 
 @app.route('/api/calculate', methods=['POST'])
