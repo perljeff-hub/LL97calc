@@ -30,18 +30,88 @@ CORS(app)
 # ---------------------------------------------------------------------------
 _ESPM_LOWER = {t.lower(): t for t in ESPM_PROPERTY_TYPES}
 
+# Explicit alias table for known LL84 variations that don't exactly match
+_ESPM_ALIASES = {
+    'multi-family housing':           'Multifamily Housing',
+    'multi family housing':           'Multifamily Housing',
+    'k12 school':                     'K-12 School',
+    'k-12 school':                    'K-12 School',
+    'parking garage':                 'Parking',
+    'parking lot':                    'Parking',
+    'non-refrigerated warehouse':     'Non-Refrigerated Warehouse',
+    'non refrigerated warehouse':     'Non-Refrigerated Warehouse',
+    'refrigerated warehouse':         'Refrigerated Warehouse',
+    'fitness center':                 'Fitness Center/Health Club/Gym',
+    'health club':                    'Fitness Center/Health Club/Gym',
+    'gym':                            'Fitness Center/Health Club/Gym',
+    'urgent care':                    'Urgent Care/Clinic/Other Outpatient',
+    'clinic':                         'Urgent Care/Clinic/Other Outpatient',
+    'post office':                    'Mailing Center/Post Office',
+    'mailing center':                 'Mailing Center/Post Office',
+    'supermarket':                    'Supermarket/Grocery Store',
+    'grocery store':                  'Supermarket/Grocery Store',
+    'worship':                        'Worship Facility',
+    'house of worship':               'Worship Facility',
+    'self storage':                   'Self-Storage Facility',
+    'self-storage':                   'Self-Storage Facility',
+    'data center':                    'Data Center',
+    'social hall':                    'Social/Meeting Hall',
+    'meeting hall':                   'Social/Meeting Hall',
+    'performing arts':                'Performing Arts',
+    'theater':                        'Movie Theater',
+    'movie theater':                  'Movie Theater',
+    'senior care':                    'Senior Care Community',
+    'assisted living':                'Senior Care Community',
+    'residential care':               'Residential Care Facility',
+    'dormitory':                      'Residence Hall/Dormitory',
+    'residence hall':                 'Residence Hall/Dormitory',
+    'medical office':                 'Medical Office',
+    'financial office':               'Financial Office',
+    'bank':                           'Bank Branch',
+    'bank branch':                    'Bank Branch',
+    'convenience store':              'Convenience Store without Gas Station',
+    'laboratory':                     'Laboratory',
+    'library':                        'Library',
+    'museum':                         'Museum',
+    'courthouse':                     'Courthouse',
+    'pre-school':                     'Pre-school/Daycare',
+    'daycare':                        'Pre-school/Daycare',
+    'vocational school':              'Vocational School',
+    'college':                        'College/University',
+    'university':                     'College/University',
+    'adult education':                'Adult Education',
+    'ambulatory surgical':            'Ambulatory Surgical Center',
+    'automobile dealership':          'Automobile Dealership',
+    'car dealership':                 'Automobile Dealership',
+    'bowling alley':                  'Bowling Alley',
+    'distribution center':            'Distribution Center',
+    'warehouse':                      'Non-Refrigerated Warehouse',
+    'enclosed mall':                  'Enclosed Mall',
+    'lifestyle center':               'Lifestyle Center',
+    'strip mall':                     'Strip Mall',
+    'wholesale club':                 'Wholesale Club/Supercenter',
+    'supercenter':                    'Wholesale Club/Supercenter',
+    'transportation terminal':        'Transportation Terminal/Station',
+    'transit station':                'Transportation Terminal/Station',
+    'manufacturing':                  'Manufacturing/Industrial Plant',
+    'industrial':                     'Manufacturing/Industrial Plant',
+    'food sales':                     'Food Sales',
+    'food service':                   'Food Service',
+    'restaurant':                     'Restaurant',
+    'hospital':                       'Hospital (General Medical & Surgical)',
+}
+
 def normalize_espm_type(raw):
     """Map a raw LL84 ESPM property type string to the canonical LL97 name."""
     if not raw:
         return ''
-    # Exact match (case-insensitive)
+    # Exact match (case-insensitive, strip whitespace)
     key = raw.strip().lower()
     if key in _ESPM_LOWER:
         return _ESPM_LOWER[key]
-    # Partial match — raw is contained in canonical, or vice-versa
-    for lower, canonical in _ESPM_LOWER.items():
-        if key in lower or lower in key:
-            return canonical
+    # Check alias table
+    if key in _ESPM_ALIASES:
+        return _ESPM_ALIASES[key]
     # No match — return as-is so the user can see what came from LL84
     return raw.strip()
 
@@ -241,8 +311,10 @@ def search_buildings():
         # electricity_kwh is already stored as kWh (converted on import)
         elec_kwh   = round(r['electricity_kwh'], 0) if r['electricity_kwh'] else None
 
-        # Build occupancy groups list (up to 3 uses from LL84)
-        # Normalize ESPM type names and only include rows with both type and area
+        # Build occupancy groups list (up to 3 uses from LL84).
+        # Include ESPM property types even when per-use floor areas are NULL —
+        # this happens when the DB was imported before the *_floor_area columns
+        # were added, or when the LL84 API doesn't provide them.
         total_gfa = r['gross_floor_area'] or 0
         occupancy_groups = []
         for type_col, area_col in [
@@ -250,21 +322,26 @@ def search_buildings():
             ('second_property_type',  'second_floor_area'),
             ('third_property_type',   'third_floor_area'),
         ]:
-            raw_type = r.get(type_col) or ''
-            area     = r.get(area_col)
+            raw_type  = r.get(type_col) or ''
+            area      = r.get(area_col)
             norm_type = normalize_espm_type(raw_type)
-            if norm_type and area and area > 0:
-                occupancy_groups.append({
-                    'property_type': norm_type,
-                    'floor_area':    round(area, 0),
-                })
-
-        # If we have no per-use breakdown but do have a primary type + total GFA, use those
-        if not occupancy_groups and r.get('primary_property_type') and total_gfa:
+            if not norm_type:
+                continue                          # no type → skip slot entirely
+            floor_area = round(float(area), 0) if (area is not None and float(area) > 0) else None
             occupancy_groups.append({
-                'property_type': normalize_espm_type(r['primary_property_type']),
-                'floor_area':    round(total_gfa, 0),
+                'property_type': norm_type,
+                'floor_area':    floor_area,
             })
+
+        # Floor-area fallbacks when individual areas are missing
+        if occupancy_groups:
+            # If exactly one group and its area is unknown, use total GFA
+            if len(occupancy_groups) == 1 and not occupancy_groups[0]['floor_area'] and total_gfa:
+                occupancy_groups[0]['floor_area'] = round(total_gfa, 0)
+        else:
+            # No property types at all — give a blank row so the UI shows something
+            if total_gfa:
+                occupancy_groups.append({'property_type': '', 'floor_area': round(total_gfa, 0)})
 
         results.append({
             'bbl':              r['bbl'],
