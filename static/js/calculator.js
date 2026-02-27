@@ -227,6 +227,14 @@ function restoreFormState() {
 
     _loading = false;
 
+    // Restore Selected Building panel
+    if (currentBuildingData) {
+      renderBuildingPanel(currentBuildingData);
+      const r = currentBuildingData;
+      document.getElementById('search-input').value =
+        (r.source === 'saved') ? r.save_name : (r.property_name || r.address || '');
+    }
+
     updateActiveBuildingNav();
     updateSaveNameLabel();
 
@@ -312,6 +320,34 @@ async function performSearch(q) {
   }
 }
 
+function renderBuildingPanel(r) {
+  if (!r) return;
+  const bldgSection = document.getElementById('selected-building-section');
+  const bldgGrid = document.getElementById('bldg-info-grid');
+  const makeItem = f => `<div class="bldg-info-item">
+    <div class="bldg-info-label">${f.label}</div>
+    <div class="bldg-info-value">${esc(String(f.value))}</div>
+  </div>`;
+  const displayName = (r.source === 'saved') ? r.save_name : (r.property_name || '—');
+  const row1 = [
+    { label: r.source === 'saved' ? 'Saved Name' : 'Property Name', value: displayName },
+    { label: 'BBL',       value: r.bbl || '—' },
+    { label: 'BIN',       value: r.bin || '—' },
+    { label: 'Data Year', value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
+  ];
+  const row2 = [
+    { label: 'Address',          value: r.address || '—' },
+    { label: 'Borough',          value: r.borough || '—' },
+    { label: 'Zip Code',         value: r.postcode || '—' },
+    { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
+    { label: 'Energy Star Score',value: r.energy_star_score || '—' },
+  ];
+  bldgGrid.innerHTML =
+    `<div class="bldg-info-row bldg-info-row-4">${row1.map(makeItem).join('')}</div>` +
+    `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>`;
+  bldgSection.classList.remove('hidden');
+}
+
 function populateFromBuilding(r) {
   _loading = true;
 
@@ -346,30 +382,7 @@ function populateFromBuilding(r) {
   }
 
   // Selected Building panel
-  const bldgSection = document.getElementById('selected-building-section');
-  const bldgGrid = document.getElementById('bldg-info-grid');
-  const makeItem = f => `<div class="bldg-info-item">
-    <div class="bldg-info-label">${f.label}</div>
-    <div class="bldg-info-value">${esc(String(f.value))}</div>
-  </div>`;
-  const displayName = (r.source === 'saved') ? r.save_name : (r.property_name || '—');
-  const row1 = [
-    { label: r.source === 'saved' ? 'Saved Name' : 'Property Name', value: displayName },
-    { label: 'BBL',       value: r.bbl || '—' },
-    { label: 'BIN',       value: r.bin || '—' },
-    { label: 'Data Year', value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
-  ];
-  const row2 = [
-    { label: 'Address',          value: r.address || '—' },
-    { label: 'Borough',          value: r.borough || '—' },
-    { label: 'Zip Code',         value: r.postcode || '—' },
-    { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
-    { label: 'Energy Star Score',value: r.energy_star_score || '—' },
-  ];
-  bldgGrid.innerHTML =
-    `<div class="bldg-info-row bldg-info-row-4">${row1.map(makeItem).join('')}</div>` +
-    `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>`;
-  bldgSection.classList.remove('hidden');
+  renderBuildingPanel(r);
 
   // Close search dropdown
   document.getElementById('search-results').classList.add('hidden');
