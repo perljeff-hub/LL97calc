@@ -335,8 +335,11 @@ def search_buildings():
 
         # Floor-area fallbacks when individual areas are missing
         if occupancy_groups:
-            # If exactly one group and its area is unknown, use total GFA
-            if len(occupancy_groups) == 1 and not occupancy_groups[0]['floor_area'] and total_gfa:
+            any_area = any(g['floor_area'] for g in occupancy_groups)
+            if not any_area and total_gfa:
+                # No per-use areas at all (old DB import) — assign total GFA to the
+                # primary type so the user has a sensible starting value to adjust.
+                # 2nd/3rd types are left blank so the user knows to fill them in.
                 occupancy_groups[0]['floor_area'] = round(total_gfa, 0)
         else:
             # No property types at all — give a blank row so the UI shows something
@@ -472,14 +475,20 @@ def _safe_float(val):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--init-db', action='store_true', help='Download and import LL84 data')
+    parser.add_argument('--init-db',  action='store_true',
+                        help='Download and import LL84 data (skips if DB already populated)')
+    parser.add_argument('--reimport', action='store_true',
+                        help='Drop and re-import LL84 data from scratch (picks up new columns)')
     parser.add_argument('--port', type=int, default=5000)
     args = parser.parse_args()
 
-    if args.init_db:
+    if args.reimport:
+        print('Re-importing LL84 database (this will replace existing data)...')
+        import_ll84_data(verbose=True, force=True)
+    elif args.init_db:
         print('Initializing LL84 database...')
         import_ll84_data(verbose=True)
     else:
         print(f'Starting LL97 Calculator on http://0.0.0.0:{args.port}')
-        print('Run with --init-db to download building database first.')
+        print('Tip: run with --init-db to download building database, or --reimport to refresh it.')
         app.run(host='0.0.0.0', port=args.port, debug=True)

@@ -174,9 +174,22 @@ def _extract_row(record, detected_schema):
     return tuple(row)
 
 
-def import_ll84_data(verbose=True):
-    """Download LL84 data from NYC Open Data and import into SQLite."""
+def import_ll84_data(verbose=True, force=False):
+    """Download LL84 data from NYC Open Data and import into SQLite.
+
+    Args:
+        force: If True, drop and recreate the buildings table before importing.
+               Use this when the database was imported with an older version of
+               this code and is missing columns (e.g. *_floor_area fields).
+    """
     conn = get_db_connection()
+
+    if force:
+        if verbose:
+            print('Force re-import: dropping existing buildings table...')
+        conn.execute('DROP TABLE IF EXISTS buildings')
+        conn.commit()
+
     create_tables(conn)
 
     # Check if data already exists
@@ -184,7 +197,7 @@ def import_ll84_data(verbose=True):
     if count > 0:
         if verbose:
             print(f'Database already contains {count} buildings. Skipping import.')
-            print('To re-import, delete ll84.db and run again.')
+            print('To re-import with fresh data, run:  python app.py --reimport')
         conn.close()
         return count
 
