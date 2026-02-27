@@ -2,9 +2,16 @@
 
 'use strict';
 
-// ── OCCUPANCY GROUP MANAGER ───────────────────────────────────────────────────
+// ── STATE ──────────────────────────────────────────────────────────────────────
 let occRowCount = 0;
+// Tracks the save_name if this building was loaded from / saved to savedbuildings.db.
+// null = building has never been saved in this session.
+let currentSaveName = null;
+// Full building metadata snapshot from the last search result selected.
+// Used when building the save payload so we preserve bbl/bin/address/etc.
+let currentBuildingData = null;
 
+// ── OCCUPANCY GROUP MANAGER ───────────────────────────────────────────────────
 function buildOccRow(index, defaultType = '', defaultArea = '') {
   const id = `occ-${index}`;
   const row = document.createElement('div');
@@ -145,14 +152,28 @@ async function performSearch(q) {
     data.results.forEach(r => {
       const item = document.createElement('div');
       item.className = 'search-result-item';
-      const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
-      const es = r.energy_star_score ? `ES Score: ${r.energy_star_score}` : '';
-      const binStr = r.bin ? `BIN: ${esc(r.bin)}` : '';
-      item.innerHTML = `
-        <div class="sri-main">${esc(r.property_name || r.address || 'Unknown')}</div>
-        <div class="sri-sub">${esc(r.address || '')} ${esc(r.borough || '')} ${esc(r.postcode || '')} &bull; BBL: ${esc(r.bbl || '')}${binStr ? ` &bull; ${binStr}` : ''}</div>
-        <div class="sri-meta">${floor}${floor && es ? ' &bull; ' : ''}${es}${r.year_ending ? ` &bull; Data year: ${r.year_ending.substring(0,4)}` : ''}</div>
-      `;
+
+      if (r.source === 'saved') {
+        // Saved building — highlight as User Defined
+        const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
+        const sub = [r.address, r.borough, r.postcode].filter(Boolean).join(' ');
+        item.innerHTML = `
+          <div class="sri-main">${esc(r.save_name)} <span class="badge badge-saved">User Defined</span></div>
+          <div class="sri-sub">${esc(sub)}${r.bbl ? ` &bull; BBL: ${esc(r.bbl)}` : ''}${r.bin ? ` &bull; BIN: ${esc(r.bin)}` : ''}</div>
+          <div class="sri-meta">${floor ? floor + ' &bull; ' : ''}Saved building</div>
+        `;
+      } else {
+        // LL84 building — existing display
+        const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
+        const es = r.energy_star_score ? `ES Score: ${r.energy_star_score}` : '';
+        const binStr = r.bin ? `BIN: ${esc(r.bin)}` : '';
+        item.innerHTML = `
+          <div class="sri-main">${esc(r.property_name || r.address || 'Unknown')}</div>
+          <div class="sri-sub">${esc(r.address || '')} ${esc(r.borough || '')} ${esc(r.postcode || '')} &bull; BBL: ${esc(r.bbl || '')}${binStr ? ` &bull; ${binStr}` : ''}</div>
+          <div class="sri-meta">${floor}${floor && es ? ' &bull; ' : ''}${es}${r.year_ending ? ` &bull; Data year: ${r.year_ending.substring(0,4)}` : ''}</div>
+        `;
+      }
+
       item.addEventListener('click', () => populateFromBuilding(r));
       resultsEl.appendChild(item);
     });
@@ -162,6 +183,11 @@ async function performSearch(q) {
 }
 
 function populateFromBuilding(r) {
+  // Track session state
+  currentBuildingData = r;
+  currentSaveName = (r.source === 'saved') ? r.save_name : null;
+  updateSaveNameLabel();
+
   // Step 1: zero out ALL energy fields first
   ['elec', 'gas', 'steam', 'fo2', 'fo4'].forEach(id => {
     const el = document.getElementById(id);
@@ -170,6 +196,7 @@ function populateFromBuilding(r) {
 
   // Step 2: clear stale results and errors
   document.getElementById('results-section').classList.add('hidden');
+  document.getElementById('save-action-row').classList.add('hidden');
   document.getElementById('error-msg').classList.add('hidden');
 
   // Step 3: repopulate energy inputs (API returns natural units)
@@ -188,7 +215,6 @@ function populateFromBuilding(r) {
   if (groups.length > 0) {
     groups.forEach(g => addOccRow(g.property_type || '', g.floor_area || ''));
   } else {
-    // Fallback: use total GFA with no property type pre-selected
     addOccRow('', r.gross_floor_area || '');
   }
 
@@ -201,14 +227,15 @@ function populateFromBuilding(r) {
     <div class="bldg-info-value">${esc(String(f.value))}</div>
   </div>`;
 
-  // Row 1: Property Name, BBL, BIN, Data Year
+  // For saved buildings, use save_name as the label in the panel
+  const displayName = (r.source === 'saved') ? r.save_name : (r.property_name || '—');
+
   const row1 = [
-    { label: 'Property Name', value: r.property_name || '—' },
-    { label: 'BBL',           value: r.bbl || '—' },
-    { label: 'BIN',           value: r.bin || '—' },
-    { label: 'Data Year',     value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
+    { label: r.source === 'saved' ? 'Saved Name' : 'Property Name', value: displayName },
+    { label: 'BBL',       value: r.bbl || '—' },
+    { label: 'BIN',       value: r.bin || '—' },
+    { label: 'Data Year', value: r.year_ending ? String(r.year_ending).substring(0,4) : '—' },
   ];
-  // Row 2: Address, Borough, Zip Code, Gross Floor Area, Energy Star Score
   const row2 = [
     { label: 'Address',          value: r.address || '—' },
     { label: 'Borough',          value: r.borough || '—' },
@@ -224,7 +251,8 @@ function populateFromBuilding(r) {
 
   // Step 6: close search dropdown and update search field
   document.getElementById('search-results').classList.add('hidden');
-  document.getElementById('search-input').value = r.property_name || r.address || '';
+  document.getElementById('search-input').value =
+    (r.source === 'saved') ? r.save_name : (r.property_name || r.address || '');
 
   // Step 7: scroll to selected building section
   bldgSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -306,6 +334,9 @@ function renderResults(data) {
   renderCosts(data.utility_costs, data.total_floor_area);
   renderPeriods(data.results, data.total_floor_area);
 
+  // Show Save button whenever results are visible
+  document.getElementById('save-action-row').classList.remove('hidden');
+
   resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -356,7 +387,6 @@ function renderPeriods(results, totalSf) {
     const pct = r.limit > 0 ? Math.min(100, (r.emissions / r.limit) * 100) : 0;
     const barClass = compliant ? 'ok' : 'over';
 
-    // Build per-period emissions breakdown HTML
     const breakdownSources = [
       { key: 'electricity',    label: 'Electricity' },
       { key: 'natural_gas',    label: 'Natural Gas' },
@@ -424,41 +454,6 @@ function renderPeriods(results, totalSf) {
   });
 }
 
-function renderBreakdown(periodResult) {
-  if (!periodResult) return;
-  const container = document.getElementById('breakdown-bars');
-  container.innerHTML = '';
-
-  const breakdown = periodResult.breakdown || {};
-  const total = periodResult.total || 0;
-  const items = [
-    { key: 'electricity',    label: 'Electricity' },
-    { key: 'natural_gas',    label: 'Natural Gas' },
-    { key: 'district_steam', label: 'District Steam' },
-    { key: 'fuel_oil_2',     label: '#2 Fuel Oil' },
-    { key: 'fuel_oil_4',     label: '#4 Fuel Oil' },
-  ];
-
-  items.forEach(item => {
-    const val = breakdown[item.key] || 0;
-    if (val === 0 && total === 0) return;
-    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
-
-    const div = document.createElement('div');
-    div.className = 'breakdown-bar-item';
-    div.innerHTML = `
-      <div class="breakdown-bar-top">
-        <span class="breakdown-bar-label">${item.label}</span>
-        <span class="breakdown-bar-val">${fmtTons(val)} tCO₂e (${pct}%)</span>
-      </div>
-      <div class="breakdown-bar-track">
-        <div class="breakdown-bar-fill bar-${item.key}" style="width:${pct}%"></div>
-      </div>
-    `;
-    container.appendChild(div);
-  });
-}
-
 // ── CLEAR ─────────────────────────────────────────────────────────────────────
 function clearAll() {
   ['elec','gas','steam','fo2','fo4'].forEach(id => {
@@ -468,6 +463,7 @@ function clearAll() {
   document.getElementById('search-input').value = '';
   document.getElementById('search-results').classList.add('hidden');
   document.getElementById('results-section').classList.add('hidden');
+  document.getElementById('save-action-row').classList.add('hidden');
   document.getElementById('error-msg').classList.add('hidden');
 
   // Hide and clear selected building section
@@ -479,6 +475,164 @@ function clearAll() {
   container.innerHTML = '';
   occRowCount = 0;
   addOccRow();
+
+  // Reset save state
+  currentSaveName = null;
+  currentBuildingData = null;
+  updateSaveNameLabel();
+}
+
+// ── SAVE ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('save-building-btn').addEventListener('click', openSaveModal);
+document.getElementById('save-modal-close').addEventListener('click', closeSaveModal);
+document.getElementById('save-modal-backdrop').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSaveModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSaveModal();
+});
+
+function openSaveModal() {
+  const body = document.getElementById('save-modal-body');
+
+  if (currentSaveName) {
+    // Building was previously saved — offer overwrite OR save as new name
+    body.innerHTML = `
+      <div class="save-option">
+        <p class="save-option-desc">Update the existing saved record:</p>
+        <button class="btn btn-primary save-overwrite-btn" id="overwrite-confirm-btn">
+          Save and Overwrite &ldquo;${esc(currentSaveName)}&rdquo;
+        </button>
+      </div>
+      <div class="save-divider">— or save under a new name —</div>
+      <div class="save-option">
+        <label class="input-label" for="save-name-input">Save As Building Name:</label>
+        <div class="save-input-row">
+          <input type="text" class="form-input" id="save-name-input" placeholder="Enter a new name…" autocomplete="off" />
+          <button class="btn btn-secondary" id="save-as-btn">Save As New</button>
+        </div>
+        <div id="save-name-error" class="save-name-error hidden"></div>
+      </div>
+    `;
+    document.getElementById('overwrite-confirm-btn').addEventListener('click', () => {
+      doSave(currentSaveName, true);
+    });
+    document.getElementById('save-as-btn').addEventListener('click', saveAsNew);
+    document.getElementById('save-name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveAsNew();
+    });
+  } else {
+    // Building has never been saved — show Save As form only
+    body.innerHTML = `
+      <div class="save-option">
+        <label class="input-label" for="save-name-input">Save As Building Name:</label>
+        <div class="save-input-row">
+          <input type="text" class="form-input" id="save-name-input" placeholder="Enter a name…" autocomplete="off" />
+          <button class="btn btn-primary" id="save-as-btn">Save</button>
+        </div>
+        <div id="save-name-error" class="save-name-error hidden"></div>
+      </div>
+    `;
+    document.getElementById('save-as-btn').addEventListener('click', saveAsNew);
+    document.getElementById('save-name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveAsNew();
+    });
+  }
+
+  document.getElementById('save-modal-backdrop').classList.remove('hidden');
+  setTimeout(() => document.getElementById('save-name-input')?.focus(), 50);
+}
+
+function saveAsNew() {
+  const nameInput = document.getElementById('save-name-input');
+  const name = (nameInput?.value || '').trim();
+  if (!name) {
+    showSaveNameError('Please enter a name.');
+    nameInput?.focus();
+    return;
+  }
+  doSave(name, false);
+}
+
+function closeSaveModal() {
+  document.getElementById('save-modal-backdrop').classList.add('hidden');
+}
+
+function showSaveNameError(msg) {
+  const el = document.getElementById('save-name-error');
+  if (el) {
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+}
+
+async function doSave(saveName, overwrite) {
+  const building = collectCurrentBuilding();
+  try {
+    const resp = await fetch('/api/save-building', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ save_name: saveName, overwrite, building }),
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      if (data.error === 'name_exists') {
+        showSaveNameError('That name is already taken — please choose a different name.');
+      } else {
+        showSaveNameError(data.error || 'Save failed. Please try again.');
+      }
+      return;
+    }
+
+    // Success
+    currentSaveName = saveName;
+    updateSaveNameLabel();
+    closeSaveModal();
+    showSaveToast(`Saved as "${saveName}"`);
+  } catch (e) {
+    showSaveNameError('Network error. Please try again.');
+  }
+}
+
+function collectCurrentBuilding() {
+  const bd = currentBuildingData || {};
+  return {
+    bbl:               bd.bbl               || '',
+    bin:               bd.bin               || '',
+    property_name:     bd.property_name     || '',
+    address:           bd.address           || '',
+    borough:           bd.borough           || '',
+    postcode:          bd.postcode          || '',
+    year_ending:       bd.year_ending       || '',
+    gross_floor_area:  bd.gross_floor_area  || null,
+    energy_star_score: bd.energy_star_score || '',
+    reported_ghg:      bd.reported_ghg      || null,
+    // Current form values (may differ from LL84 data if user edited them)
+    electricity_kwh:   getVal('elec'),
+    natural_gas_therms: getVal('gas'),
+    district_steam_mlb: getVal('steam'),
+    fuel_oil_2_gal:    getVal('fo2'),
+    fuel_oil_4_gal:    getVal('fo4'),
+    occupancy_groups:  getOccupancyGroups(),
+  };
+}
+
+function updateSaveNameLabel() {
+  const el = document.getElementById('save-current-name');
+  if (!el) return;
+  el.textContent = currentSaveName ? `Currently saved as: "${currentSaveName}"` : '';
+}
+
+function showSaveToast(msg) {
+  const toast = document.getElementById('save-toast');
+  toast.textContent = msg;
+  toast.classList.remove('hidden', 'fade-out');
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.classList.add('hidden'), 600);
+  }, 2800);
 }
 
 // ── FORMATTING HELPERS ─────────────────────────────────────────────────────────
@@ -505,7 +659,6 @@ function esc(str) {
 
 // ── INIT ───────────────────────────────────────────────────────────────────────
 (async function init() {
-  // Add first occupancy row
   addOccRow();
 
   document.getElementById('add-occ-btn').addEventListener('click', () => {

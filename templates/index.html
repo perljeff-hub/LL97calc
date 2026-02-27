@@ -150,7 +150,36 @@
       </div>
     </section>
 
+    <!-- Save Action Row -->
+    <div class="save-action-row" id="save-action-row">
+      <button class="btn btn-save" id="save-building-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13.5 2H5L2 5v8.5A.5.5 0 002.5 14h11a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <rect x="5" y="2" width="5" height="4" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <rect x="4" y="9" width="8" height="5" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+        </svg>
+        Save Building
+      </button>
+      <span class="save-current-name" id="save-current-name"></span>
+    </div>
+
   </section>
+
+  <!-- ── SAVE MODAL ──────────────────────────────────────────────────────────── -->
+  <div id="save-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="save-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="save-modal-title">Save Building</h3>
+        <button class="modal-close" id="save-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="save-modal-body">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOAST ───────────────────────────────────────────────────────────────── -->
+  <div id="save-toast" class="save-toast hidden" role="status" aria-live="polite"></div>
 
 </main>
 
