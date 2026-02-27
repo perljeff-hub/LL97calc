@@ -249,10 +249,16 @@ body {
 }
 
 /* ── SELECTED BUILDING INFO ─────────────────────────────────────────────── */
-.bldg-info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: .5rem;
+.bldg-info-grid { display: flex; flex-direction: column; gap: .5rem; }
+.bldg-info-row { display: grid; gap: .5rem; }
+.bldg-info-row-4 { grid-template-columns: repeat(4, 1fr); }
+.bldg-info-row-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 900px) {
+  .bldg-info-row-4 { grid-template-columns: repeat(2, 1fr); }
+  .bldg-info-row-5 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+  .bldg-info-row-4, .bldg-info-row-5 { grid-template-columns: repeat(2, 1fr); }
 }
 .bldg-info-item {
   background: var(--gray-50);
