@@ -23,37 +23,43 @@ PAGE_SIZE = 1000
 
 # ---------------------------------------------------------------------------
 # Column name mappings: the LL84 Socrata API uses these exact field names.
-# We provide ordered lists of candidates so the importer auto-detects which
-# schema version is present (the 2022-present dataset differs slightly from
-# the pre-2022 dataset in some field names).
+# Primary candidates are the current 5zyy-y8am (2022-present) field names;
+# fallbacks cover older schema variants for forward-compatibility.
 # ---------------------------------------------------------------------------
 
 # Each entry: (our_internal_name, [candidate_api_names_in_preference_order])
 FIELD_MAP = [
     # Identifiers
-    ('bbl',                  ['bbl_10_digits', 'bbl']),
-    ('bin',                  ['bin', 'building_id_number']),
+    ('bbl',                  ['nyc_borough_block_and_lot', 'bbl_10_digits', 'bbl']),
+    ('bin',                  ['nyc_building_identification', 'bin', 'building_id_number']),
     ('property_name',        ['property_name']),
     ('parent_property_name', ['parent_property_name']),
-    ('address',              ['address_1_self_reported', 'address1', 'address']),
+    ('address',              ['address_1', 'address_1_self_reported', 'address1', 'address']),
     ('borough',              ['borough']),
-    ('postcode',             ['postcode', 'zip_code']),
+    ('postcode',             ['postal_code', 'postcode', 'zip_code']),
     ('year_ending',          ['year_ending', 'reporting_year']),
     # Building characteristics
-    ('gross_floor_area',     ['dof_gross_floor_area', 'gross_floor_area_buildings_sq_ft']),
+    ('gross_floor_area',     ['property_gfa_self_reported', 'dof_gross_floor_area',
+                               'gross_floor_area_buildings_sq_ft']),
     ('primary_property_type',['largest_property_use_type', 'primary_property_type_self_selected']),
-    ('primary_floor_area',   ['largest_property_use_type_gross_floor_area',
+    ('primary_floor_area',   ['largest_property_use_type_1',
+                               'largest_property_use_type_gross_floor_area',
                                'largest_property_use_gross_floor_area']),
-    ('second_property_type', ['second_largest_property_use', 'second_largest_property_use_type']),
-    ('second_floor_area',    ['second_largest_property_use_gross_floor_area']),
-    ('third_property_type',  ['third_largest_property_use',  'third_largest_property_use_type']),
-    ('third_floor_area',     ['third_largest_property_use_gross_floor_area']),
-    # Energy — LL84 reports ALL energy values in kBtu.
-    # Electricity is converted to kWh on import (÷ 3.412142).
-    # All combustion fuels remain stored as kBtu; conversions to natural units
-    # (therms, Mlb, gallons) happen at display/search time in app.py.
-    ('electricity_kwh',      ['electricity_use_grid_purchase',        # kBtu in LL84 → converted to kWh
-                               'electricity_use_grid_purchase_k_btu', # older schema name
+    ('second_property_type', ['_2nd_largest_property_use', 'second_largest_property_use',
+                               'second_largest_property_use_type']),
+    ('second_floor_area',    ['_2nd_largest_property_use_1',
+                               'second_largest_property_use_gross_floor_area']),
+    ('third_property_type',  ['_3rd_largest_property_use', 'third_largest_property_use',
+                               'third_largest_property_use_type']),
+    ('third_floor_area',     ['_3rd_largest_property_use_1',
+                               'third_largest_property_use_gross_floor_area']),
+    # Energy
+    # electricity_use_grid_purchase_1 is in kWh in the current LL84 dataset;
+    # older fields electricity_use_grid_purchase / _k_btu are in kBtu and are
+    # converted below via _ELEC_KBTU_FIELDS.
+    ('electricity_kwh',      ['electricity_use_grid_purchase_1',
+                               'electricity_use_grid_purchase',
+                               'electricity_use_grid_purchase_k_btu',
                                'electricity_kwh']),
     # Natural gas — stored in kBtu; displayed as therms (÷ 100)
     ('natural_gas_kbtu',     ['natural_gas_use_kbtu', 'natural_gas_use_k_btu',
@@ -65,14 +71,18 @@ FIELD_MAP = [
     ('fuel_oil_4_kbtu',      ['fuel_oil_4_use_kbtu', 'fuel_oil_number_4_use_k_btu']),
     ('fuel_oil_56_kbtu',     ['fuel_oil_5_and_6_use_kbtu', 'fuel_oil_number_5_6_use_k_btu']),
     # Performance metrics
-    ('site_eui',             ['site_eui_kbtu_ft', 'site_eui_kbtu_sq_ft', 'weather_normalized_site_eui_kbtu_sq_ft']),
-    ('weather_norm_site_eui',['weather_normalized_site_eui', 'weather_normalized_site_eui_kbtu_sq_ft']),
+    ('site_eui',             ['site_eui_kbtu_ft', 'site_eui_kbtu_sq_ft',
+                               'weather_normalized_site_eui_kbtu_sq_ft']),
+    ('weather_norm_site_eui',['weather_normalized_site_eui',
+                               'weather_normalized_site_eui_kbtu_sq_ft']),
     ('energy_star_score',    ['energy_star_score']),
     ('reported_ghg_emissions',['total_ghg_emissions_metric_tons_co2e', 'total_ghg_emissions']),
-    ('reported_ghg_intensity',['ghg_intensity_metric_tons_co2e_ft2', 'ghg_emissions_intensity_metric_tons']),
+    ('reported_ghg_intensity',['ghg_intensity_metric_tons_co2e_ft2',
+                                'ghg_emissions_intensity_metric_tons']),
 ]
 
-# ALL electricity fields from LL84 are in kBtu — always convert to kWh (÷ 3.412142)
+# Electricity fields that are in kBtu and must be converted to kWh (÷ 3.412142).
+# The current primary field electricity_use_grid_purchase_1 is already in kWh.
 _ELEC_KBTU_FIELDS = {
     'electricity_use_grid_purchase',
     'electricity_use_grid_purchase_k_btu',
@@ -160,13 +170,13 @@ def _extract_row(record, detected_schema):
     for our_name, candidates in FIELD_MAP:
         raw_val, src_field = _resolve_field(record, candidates)
 
-        if our_name in ('bbl', 'property_name', 'parent_property_name', 'address',
+        if our_name in ('bbl', 'bin', 'property_name', 'parent_property_name', 'address',
                         'borough', 'postcode', 'year_ending', 'primary_property_type',
                         'second_property_type', 'third_property_type', 'energy_star_score'):
             row.append(raw_val or '')
         elif our_name == 'electricity_kwh':
             val = safe_float(raw_val)
-            # LL84 reports electricity in kBtu — convert to kWh (÷ 3.412142)
+            # Convert kBtu → kWh only for legacy fields that report in kBtu
             if val is not None and src_field in _ELEC_KBTU_FIELDS:
                 val = round(val / 3.412142, 1)
             row.append(val)
@@ -262,7 +272,7 @@ def import_ll84_data(verbose=True, force=False):
 
         conn.executemany('''
             INSERT INTO buildings (
-                bbl, property_name, parent_property_name, address, borough,
+                bbl, bin, property_name, parent_property_name, address, borough,
                 postcode, year_ending, gross_floor_area,
                 primary_property_type, primary_floor_area,
                 second_property_type,  second_floor_area,
@@ -271,7 +281,7 @@ def import_ll84_data(verbose=True, force=False):
                 fuel_oil_2_kbtu, fuel_oil_4_kbtu, fuel_oil_56_kbtu,
                 site_eui, weather_norm_site_eui, energy_star_score,
                 reported_ghg_emissions, reported_ghg_intensity
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', rows)
         conn.commit()
 
