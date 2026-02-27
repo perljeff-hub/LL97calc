@@ -224,12 +224,20 @@ body {
 .sri-meta { font-size: .78rem; color: var(--gray-700); margin-top: .2rem; }
 .info-msg {
   margin-top: .5rem;
-  font-size: .8rem;
-  color: var(--gray-700);
-  background: var(--amber-light);
-  padding: .4rem .75rem;
+  font-size: .85rem;
+  color: #7d4e00;
+  background: #fff8e1;
+  padding: .6rem 1rem;
   border-radius: var(--radius-sm);
-  border-left: 3px solid var(--amber);
+  border-left: 4px solid #f59e0b;
+  line-height: 1.5;
+}
+.info-msg code {
+  background: rgba(0,0,0,.08);
+  padding: .1em .4em;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: .95em;
 }
 
 /* ── OCCUPANCY GROUPS ──────────────────────────────────────────────────── */
