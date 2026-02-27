@@ -455,11 +455,22 @@ def espm_types():
 @app.route('/api/db-status')
 def db_status():
     if not os.path.exists(DB_PATH):
-        return jsonify({'initialized': False, 'count': 0})
+        return jsonify({'initialized': False, 'count': 0, 'needs_reimport': False})
     conn = get_db_connection()
     count = conn.execute('SELECT COUNT(*) FROM buildings').fetchone()[0]
+    # Check whether per-use floor area data was imported (indicates fresh import)
+    has_floor_areas = False
+    if count > 0:
+        n = conn.execute(
+            'SELECT COUNT(*) FROM buildings WHERE primary_floor_area IS NOT NULL AND primary_floor_area > 0'
+        ).fetchone()[0]
+        has_floor_areas = n > 0
     conn.close()
-    return jsonify({'initialized': count > 0, 'count': count})
+    return jsonify({
+        'initialized':    count > 0,
+        'count':          count,
+        'needs_reimport': count > 0 and not has_floor_areas,
+    })
 
 
 def _safe_float(val):

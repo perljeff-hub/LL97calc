@@ -450,9 +450,15 @@ function esc(str) {
   try {
     const resp = await fetch('/api/db-status');
     const data = await resp.json();
+    const msg = document.getElementById('db-status-msg');
     if (!data.initialized) {
-      const msg = document.getElementById('db-status-msg');
       msg.textContent = 'Building database not yet loaded. Run: python app.py --init-db to enable building search.';
+      msg.classList.remove('hidden');
+    } else if (data.needs_reimport) {
+      msg.innerHTML =
+        '<strong>Database needs refresh:</strong> Your LL84 database is missing per-use floor area data. ' +
+        'Stop the app and run <code>python app.py --reimport</code> to download a fresh copy. ' +
+        'Until then, the building\'s total floor area is used as a fallback for the primary occupancy type.';
       msg.classList.remove('hidden');
     }
   } catch (e) { /* ignore */ }
