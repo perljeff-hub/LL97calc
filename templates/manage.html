@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage — NYC LL97 Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#1a5276"/>
+        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="header-title">NYC LL97 Calculator</div>
+        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/" class="nav-link">Calculate</a>
+      <a href="/manage" class="nav-link active" id="manage-nav-link">Manage</a>
+      <a href="/settings" class="nav-link">⚙ Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <!-- Loading -->
+  <div id="manage-loading" class="card manage-status-card">
+    <p class="manage-status-text">Loading compliance data…</p>
+  </div>
+
+  <!-- No active building -->
+  <div id="manage-no-building" class="card manage-status-card hidden">
+    <p class="manage-status-text">
+      No active building selected.
+      Please <a href="/">load or save a building</a> on the Calculate tab to use Manage.
+    </p>
+  </div>
+
+  <!-- Error -->
+  <div id="manage-error" class="error-msg hidden" style="margin:0"></div>
+
+  <!-- ── COMPLIANCE TIMELINE CHART ──────────────────────────────────────── -->
+  <section class="card wide-card hidden" id="manage-chart-container">
+    <h2 class="card-title">
+      LL97 Compliance Timeline —
+      <span id="manage-building-name" class="manage-building-name-span"></span>
+    </h2>
+    <p class="card-desc">
+      Annual GHG emissions vs. emissions limits and projected fines, 2024–2050.
+      <span class="manage-legend-note"><span class="manage-fine-year-example">Red bold</span> years indicate non-compliance.</span>
+    </p>
+    <div class="manage-chart-wrapper">
+      <canvas id="manage-chart"></canvas>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<!-- ── INLINE SCRIPT: active building chip + manage link state ─────────── -->
+<script>
+(function() {
+  try {
+    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    if (a && a.saveName) {
+      const escaped = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      document.getElementById('active-building-nav').innerHTML =
+        `<span class="active-building-chip">`+
+        `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
+        `<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+        `<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+        `</svg>`+
+        `<span>${escaped}</span>`+
+        `</span>`;
+    }
+  } catch(e) {}
+})();
+</script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/manage.js') }}"></script>
+</body>
+</html>

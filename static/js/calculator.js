@@ -160,7 +160,7 @@ function updateActiveBuildingNav() {
     nav.innerHTML = '';
   }
 
-  // Sync to sessionStorage so settings.html can read it
+  // Sync to sessionStorage so settings.html / manage.html can read it
   try {
     if (currentSaveName) {
       sessionStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: currentSaveName }));
@@ -168,6 +168,22 @@ function updateActiveBuildingNav() {
       sessionStorage.removeItem(ACTIVE_KEY);
     }
   } catch (e) { /* ignore */ }
+
+  syncManageLink();
+}
+
+function syncManageLink() {
+  const link = document.getElementById('manage-nav-link');
+  if (!link) return;
+  if (currentSaveName) {
+    link.setAttribute('href', '/manage');
+    link.classList.remove('nav-link-disabled');
+    link.removeAttribute('title');
+  } else {
+    link.removeAttribute('href');
+    link.classList.add('nav-link-disabled');
+    link.setAttribute('title', 'Save or Load a Saved Building to enable Manage');
+  }
 }
 
 // ── SESSION STORAGE ────────────────────────────────────────────────────────────

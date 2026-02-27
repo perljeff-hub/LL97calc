@@ -24,6 +24,7 @@
     <nav class="header-nav">
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
+      <a id="manage-nav-link" class="nav-link nav-link-disabled" title="Save or Load a Saved Building to enable Manage">Manage</a>
       <a href="/settings" class="nav-link active">⚙ Settings</a>
     </nav>
   </div>
@@ -214,7 +215,7 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
   setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
 });
 
-// ── Active Building nav chip (read from sessionStorage) ────────────────────
+// ── Active Building nav chip + Manage link (read from sessionStorage) ──────
 (function() {
   try {
     const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
@@ -227,6 +228,9 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
         `</svg>`+
         `<span>${a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`+
         `</span>`;
+      // Enable Manage nav link
+      const ml = document.getElementById('manage-nav-link');
+      if (ml) { ml.href = '/manage'; ml.classList.remove('nav-link-disabled'); ml.removeAttribute('title'); }
     }
   } catch(e) {}
 })();

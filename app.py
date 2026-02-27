@@ -231,6 +231,14 @@ def index():
     )
 
 
+@app.route('/manage')
+def manage():
+    return render_template('manage.html',
+        compliance_periods=COMPLIANCE_PERIODS,
+        period_labels=PERIOD_LABELS,
+    )
+
+
 @app.route('/settings')
 def settings():
     user_factors = session.get('utility_factors', {})
