@@ -32,6 +32,7 @@ PAGE_SIZE = 1000
 FIELD_MAP = [
     # Identifiers
     ('bbl',                  ['bbl_10_digits', 'bbl']),
+    ('bin',                  ['bin', 'building_id_number']),
     ('property_name',        ['property_name']),
     ('parent_property_name', ['parent_property_name']),
     ('address',              ['address_1_self_reported', 'address1', 'address']),
@@ -99,6 +100,7 @@ def create_tables(conn):
         CREATE TABLE IF NOT EXISTS buildings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bbl TEXT,
+            bin TEXT,
             property_name TEXT,
             parent_property_name TEXT,
             address TEXT,
@@ -127,14 +129,20 @@ def create_tables(conn):
     ''')
 
     conn.execute('CREATE INDEX IF NOT EXISTS idx_bbl ON buildings(bbl)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_bin ON buildings(bin)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_address ON buildings(address)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_property_name ON buildings(property_name)')
 
-    # Migrate existing databases that are missing the per-occupancy floor area columns
+    # Migrate existing databases that are missing columns added after initial release
     existing = {row[1] for row in conn.execute("PRAGMA table_info(buildings)").fetchall()}
-    for col in ('primary_floor_area', 'second_floor_area', 'third_floor_area'):
+    for col, dtype in [
+        ('primary_floor_area', 'REAL'),
+        ('second_floor_area',  'REAL'),
+        ('third_floor_area',   'REAL'),
+        ('bin',                'TEXT'),
+    ]:
         if col not in existing:
-            conn.execute(f'ALTER TABLE buildings ADD COLUMN {col} REAL')
+            conn.execute(f'ALTER TABLE buildings ADD COLUMN {col} {dtype}')
 
     conn.commit()
 
