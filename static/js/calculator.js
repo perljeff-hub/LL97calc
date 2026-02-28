@@ -12,6 +12,17 @@ let currentBuildingData = null;
 let isDirty = false;
 // Suppresses dirty-marking during bulk form population (load / state restore).
 let _loading = false;
+// Energy prices loaded from settings API
+let _energyPrices = {};
+
+// Fuel definitions for the energy usage table
+const EU_FUELS = [
+  { inputId: 'elec',  priceKey: 'electricity_kwh',    unit: '/kWh',   priceElId: 'eu-price-elec',  costElId: 'eu-cost-elec'  },
+  { inputId: 'gas',   priceKey: 'natural_gas_therm',  unit: '/therm', priceElId: 'eu-price-gas',   costElId: 'eu-cost-gas'   },
+  { inputId: 'steam', priceKey: 'district_steam_mlb', unit: '/mLb',   priceElId: 'eu-price-steam', costElId: 'eu-cost-steam' },
+  { inputId: 'fo2',   priceKey: 'fuel_oil_2_gal',     unit: '/gal',   priceElId: 'eu-price-fo2',   costElId: 'eu-cost-fo2'   },
+  { inputId: 'fo4',   priceKey: 'fuel_oil_4_gal',     unit: '/gal',   priceElId: 'eu-price-fo4',   costElId: 'eu-cost-fo4'   },
+];
 
 const SESSION_KEY = 'll97_calc_state';  // sessionStorage key for form persistence
 const ACTIVE_KEY  = 'll97_active';      // sessionStorage key for nav chip (read by settings.html)
@@ -136,6 +147,51 @@ function markDirty() {
 function markClean() {
   isDirty = false;
   updateActiveBuildingNav();
+}
+
+// ── ENERGY PRICE DISPLAY & COST CALCULATION ───────────────────────────────────
+async function loadEnergyPrices() {
+  try {
+    const resp = await fetch('/api/settings/prices');
+    const data = await resp.json();
+    _energyPrices = data.prices || {};
+  } catch (e) { /* non-fatal */ }
+  updateEnergyCosts();
+}
+
+function updateEnergyCosts() {
+  let total = 0;
+  let hasAnyPrice = false;
+  EU_FUELS.forEach(f => {
+    const priceEl = document.getElementById(f.priceElId);
+    const costEl  = document.getElementById(f.costElId);
+    const p = _energyPrices[f.priceKey];
+    const price = (p && p.price != null) ? Number(p.price) : null;
+    const usage = parseFloat(document.getElementById(f.inputId)?.value) || 0;
+
+    if (priceEl) {
+      priceEl.textContent = price != null ? `$${price}${f.unit}` : '—';
+    }
+    if (costEl) {
+      if (price != null) {
+        hasAnyPrice = true;
+        if (usage > 0) {
+          const cost = price * usage;
+          total += cost;
+          costEl.textContent = fmtDollars(cost);
+        } else {
+          costEl.textContent = '';
+        }
+      } else {
+        costEl.textContent = '';
+      }
+    }
+  });
+
+  const totalEl = document.getElementById('eu-cost-total');
+  if (totalEl) {
+    totalEl.textContent = (hasAnyPrice && total > 0) ? fmtDollars(total) : '—';
+  }
 }
 
 // ── ACTIVE BUILDING NAV CHIP ───────────────────────────────────────────────────
@@ -411,6 +467,7 @@ function populateFromBuilding(r) {
   _loading = false;
   markClean();         // freshly loaded — treat as clean
   updateSaveNameLabel();
+  updateEnergyCosts(); // refresh cost display with new usage values
   saveFormState();     // persist so navigation restores form
 
   bldgSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -488,39 +545,11 @@ function getVal(id) {
 function renderResults(data) {
   const resultsSection = document.getElementById('results-section');
   resultsSection.classList.remove('hidden');
-  renderCosts(data.utility_costs, data.total_floor_area);
   renderPeriods(data.results, data.total_floor_area);
   document.getElementById('save-action-row').classList.remove('hidden');
   // Persist that results were shown so save row restores on return from settings
   saveFormState();
   resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function renderCosts(costs, totalSf) {
-  const grid = document.getElementById('costs-grid');
-  const labels = {
-    electricity:    'Electricity',
-    natural_gas:    'Natural Gas',
-    district_steam: 'District Steam',
-    fuel_oil_2:     '#2 Fuel Oil',
-    fuel_oil_4:     '#4 Fuel Oil',
-    total:          'Total Utility Cost',
-  };
-  const keys = ['electricity','natural_gas','district_steam','fuel_oil_2','fuel_oil_4','total'];
-  grid.innerHTML = '';
-  keys.forEach(k => {
-    const val = costs[k] || 0;
-    if (k !== 'total' && val === 0) return;
-    const item = document.createElement('div');
-    item.className = `cost-item${k === 'total' ? ' total' : ''}`;
-    const perSf = totalSf ? (val / totalSf).toFixed(2) : '—';
-    item.innerHTML = `
-      <div class="cost-label">${labels[k]}</div>
-      <div class="cost-value">${fmtDollars(val)}</div>
-      ${k !== 'total' ? `<div class="cost-per-sf">$${perSf}/sf</div>` : `<div class="cost-per-sf">$${(val/totalSf).toFixed(2)}/sf</div>`}
-    `;
-    grid.appendChild(item);
-  });
 }
 
 function renderPeriods(results, totalSf) {
@@ -622,6 +651,7 @@ function clearAll() {
   isDirty            = false;
   updateActiveBuildingNav();
   updateSaveNameLabel();
+  updateEnergyCosts();
   clearFormState();
 }
 
@@ -893,11 +923,16 @@ function esc(str) {
 
 // ── INIT ───────────────────────────────────────────────────────────────────────
 (async function init() {
+  // Load energy prices (for the usage table cost column)
+  await loadEnergyPrices();
+
   // Restore state from sessionStorage (navigating back from Settings, etc.)
   const restored = restoreFormState();
   if (!restored) {
     // Fresh start — add one blank occupancy row
     addOccRow();
+  } else {
+    updateEnergyCosts();
   }
 
   document.getElementById('add-occ-btn').addEventListener('click', () => {
@@ -905,9 +940,12 @@ function esc(str) {
     if (count < 4) { addOccRow(); markDirty(); }
   });
 
-  // Dirty listeners on energy inputs
+  // Dirty listeners on energy inputs; also update cost display on each keystroke
   ['elec','gas','steam','fo2','fo4'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', markDirty);
+    document.getElementById(id)?.addEventListener('input', () => {
+      markDirty();
+      updateEnergyCosts();
+    });
   });
 
   // Check DB status
