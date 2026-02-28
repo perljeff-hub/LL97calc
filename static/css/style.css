@@ -937,6 +937,8 @@ body {
 .fin-fine-nz { color: var(--red); font-weight: 600; }
 .fin-measure-nz { color: #27ae60; font-weight: 600; }
 .fin-fuel-col { color: var(--gray-700); }
+.fin-sum-col { font-weight: 700; border-left: 2px solid var(--gray-300) !important; }
+.fin-scen-col.fin-sum-col { border-left: 2px solid #f4a97a !important; }
 .fin-neg { color: var(--red); }
 .fin-totals-row td { background: var(--gray-100) !important; border-top: 2px solid var(--gray-300); font-weight: 600; }
 .fin-totals-row .fin-scen-col { background: #fdeee6 !important; }
