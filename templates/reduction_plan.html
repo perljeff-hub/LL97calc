@@ -25,8 +25,17 @@
     <nav class="header-nav">
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
-      <a href="/manage" class="nav-link">Manage</a>
-      <a href="/reduction-plan" class="nav-link active">Reduction Plan</a>
+      <!-- Manage dropdown — Reduction Plan is the active sub-item -->
+      <div class="nav-dropdown" id="manage-nav-dropdown">
+        <a class="nav-link active nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Compliance Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item active">Reduction Plan</a>
+        </div>
+      </div>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
@@ -231,6 +240,18 @@
   } catch(e) {}
 })();
 </script>
+
+<!-- ── SAVINGS WARNING MODAL ──────────────────────────────────────────────── -->
+<div id="rp-warn-backdrop" class="rp-warn-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rp-warn-title">
+  <div class="rp-warn-dialog">
+    <div class="rp-warn-title" id="rp-warn-title">Savings Exceeds Baseline Usage — Are you sure?</div>
+    <div class="rp-warn-body" id="rp-warn-body"></div>
+    <div class="rp-warn-actions">
+      <button id="rp-warn-yes" class="btn btn-primary btn-sm">Yes, Keep Value</button>
+      <button id="rp-warn-no" class="btn btn-secondary btn-sm">No, Clear Field</button>
+    </div>
+  </div>
+</div>
 
 <script src="{{ url_for('static', filename='js/reduction_plan.js') }}"></script>
 </body>

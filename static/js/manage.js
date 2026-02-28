@@ -1,19 +1,10 @@
 /**
- * manage.js — LL97 Compliance Timeline (Manage tab)
- *
- * Reads the active building's form inputs from sessionStorage, calls
- * /api/calculate, expands the 5-period results into discrete yearly
- * data (2024–2050), and renders a Chart.js mixed bar+line chart.
- *
- * Also loads available Reduction Plan scenarios and, when one is
- * selected, overlays scenario bars + a scenario emissions line.
+ * manage.js — LL97 Compliance Timeline + Financial Summary
  */
-
 'use strict';
 
 const SESSION_KEY = 'll97_calc_state';
 
-// Map each compliance period to the individual calendar years it covers
 const PERIOD_YEAR_MAP = [
   { period: '2024_2029', years: [2024,2025,2026,2027,2028,2029] },
   { period: '2030_2034', years: [2030,2031,2032,2033,2034] },
@@ -22,7 +13,23 @@ const PERIOD_YEAR_MAP = [
   { period: '2050_plus', years: [2050] },
 ];
 
-let manageChart = null;   // current Chart.js instance
+// Default utility prices — must match /api/calculate defaults for consistency
+const DEFAULT_PRICES = {
+  electricity:    { label: 'Electricity', unit: '$/kWh',  val: 0.15 },
+  natural_gas:    { label: 'Nat. Gas',    unit: '$/therm',val: 1.50 },
+  district_steam: { label: 'Steam',       unit: '$/mLb',  val: 18.00 },
+  fuel_oil_2:     { label: 'Oil #2',      unit: '$/gal',  val: 3.00 },
+  fuel_oil_4:     { label: 'Oil #4',      unit: '$/gal',  val: 2.90 },
+};
+const FUEL_KEYS = Object.keys(DEFAULT_PRICES);
+
+let manageChart      = null;
+let baseUtilityCosts = null;  // from /api/calculate utility_costs
+let cachedYears      = [];
+let cachedBaseFines  = [];
+let cachedScenData   = null;
+let cachedScenName   = '';
+let showFuelDetail   = false;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 
@@ -38,7 +45,6 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  // Build the /api/calculate payload from saved form state
   const payload = buildCalcPayload(state);
   if (!payload.occupancy_groups.length) {
     showError('No occupancy groups found. Please configure building data on the Calculate tab first.');
@@ -48,13 +54,12 @@ document.addEventListener('DOMContentLoaded', async function init() {
   let calcData;
   try {
     const resp = await fetch('/api/calculate', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
     calcData = await resp.json();
     if (!resp.ok || calcData.error) {
-      showError(calcData.error || 'Calculation failed. Please try again.');
+      showError(calcData.error || 'Calculation failed.');
       return;
     }
   } catch (e) {
@@ -62,10 +67,9 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  // Show baseline chart
+  baseUtilityCosts = calcData.utility_costs;
   buildChart(state.saveName, calcData.results);
-
-  // Attempt to load scenarios (non-blocking)
+  buildFinancialTable();
   loadScenarios(state.saveName, calcData.results, state);
 });
 
@@ -79,12 +83,11 @@ async function loadScenarios(buildingName, results, state) {
     const scenarios = data.scenarios || [];
     if (!scenarios.length) return;
 
-    // Populate scenario dropdown
     const bar    = document.getElementById('manage-scenario-bar');
     const select = document.getElementById('manage-scenario-select');
     scenarios.forEach(s => {
-      const opt       = document.createElement('option');
-      opt.value       = s.id;
+      const opt = document.createElement('option');
+      opt.value = s.id;
       opt.textContent = s.name;
       select.appendChild(opt);
     });
@@ -93,42 +96,38 @@ async function loadScenarios(buildingName, results, state) {
     select.addEventListener('change', async () => {
       const scenarioId = parseInt(select.value, 10) || null;
       if (!scenarioId) {
+        cachedScenData = null;
+        cachedScenName = '';
         buildChart(buildingName, results);
+        buildFinancialTable();
         return;
       }
-
       const loadingEl = document.getElementById('manage-scenario-loading');
       loadingEl.classList.remove('hidden');
-
       try {
-        const compPayload = {
-          ...buildCalcPayload(state),
-          scenario_id: scenarioId,
-        };
+        const compPayload = { ...buildCalcPayload(state), scenario_id: scenarioId };
         const compResp = await fetch('/api/scenario-compute', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(compPayload),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(compPayload),
         });
         const compData = await compResp.json();
-        if (!compResp.ok || compData.error) throw new Error(compData.error || 'Compute failed');
-
-        const scenarioName = scenarios.find(s => s.id === scenarioId)?.name || '';
-        buildChart(buildingName, results, compData.yearly_data, scenarioName);
+        if (!compResp.ok || compData.error) throw new Error(compData.error);
+        cachedScenData = compData.yearly_data;
+        cachedScenName = scenarios.find(s => s.id === scenarioId)?.name || '';
+        buildChart(buildingName, results, cachedScenData, cachedScenName);
+        buildFinancialTable();
       } catch (e) {
-        // Revert to baseline if compute fails
+        cachedScenData = null; cachedScenName = '';
         buildChart(buildingName, results);
-        console.error('Scenario compute failed:', e);
+        buildFinancialTable();
       } finally {
         loadingEl.classList.add('hidden');
       }
     });
-  } catch (e) {
-    // Scenarios are optional; silently ignore errors
-  }
+  } catch (e) { /* scenarios optional */ }
 }
 
-// ── PAYLOAD HELPER ────────────────────────────────────────────────────────────
+// ── HELPERS ───────────────────────────────────────────────────────────────────
 
 function buildCalcPayload(state) {
   return {
@@ -143,242 +142,138 @@ function buildCalcPayload(state) {
   };
 }
 
+function $d(v) { return '$' + Math.round(v).toLocaleString('en-US'); }
+function $f(v) { return v ? '$' + Math.round(v).toLocaleString('en-US') : '—'; }
+
 // ── CHART ─────────────────────────────────────────────────────────────────────
 
-/**
- * @param {string}  buildingName  — shown in chart title
- * @param {object}  results       — period-keyed baseline results from /api/calculate
- * @param {Array}   [scenarioData] — per-year scenario data from /api/scenario-compute
- * @param {string}  [scenarioName]
- */
 function buildChart(buildingName, results, scenarioData = null, scenarioName = '') {
-  // Destroy previous chart instance if any
   if (manageChart) { manageChart.destroy(); manageChart = null; }
 
-  const years          = [];
-  const baseEmissions  = [];
-  const limits         = [];
-  const baseFines      = [];
-  const baseHasFine    = [];
+  cachedYears = []; cachedBaseFines = [];
+  const baseEmissions = [], limits = [];
 
-  // Expand 5 periods → 27 individual years (baseline)
-  for (const { period, years: pyears } of PERIOD_YEAR_MAP) {
+  for (const { period, years } of PERIOD_YEAR_MAP) {
     const r = results[period];
     if (!r) continue;
-    for (const yr of pyears) {
-      years.push(String(yr));
+    for (const yr of years) {
+      cachedYears.push(String(yr));
       baseEmissions.push(Math.round(r.emissions * 100) / 100);
       limits.push(Math.round(r.limit * 100) / 100);
-      baseFines.push(Math.round(r.penalty));
-      baseHasFine.push(r.penalty > 0);
+      cachedBaseFines.push(Math.round(r.penalty));
     }
   }
 
-  // Determine what to use for x-axis colouring + cumulative line
   let hasFine, cumulativeFines, datasets;
 
   if (scenarioData && scenarioData.length) {
-    // ── Scenario overlay mode ───────────────────────────────────────────────
     const scenFines     = scenarioData.map(d => Math.round(d.fine));
     const scenEmissions = scenarioData.map(d => Math.round(d.emissions * 100) / 100);
-    hasFine             = scenFines.map(f => f > 0);
-
-    cumulativeFines = [];
+    hasFine = scenFines.map(f => f > 0);
     let cum = 0;
-    for (const f of scenFines) { cum += f; cumulativeFines.push(cum); }
-
-    // Cumulative for baseline (for reference in tooltip)
-    let baseCum = 0;
-    const baseCumFines = baseFines.map(f => { baseCum += f; return baseCum; });
+    cumulativeFines = scenFines.map(f => (cum += f));
 
     datasets = [
-      // Baseline fine bars — grey, behind everything
+      // Baseline fine bars — grey, LEFT (order 4 < scenario order 5)
       {
-        type:            'bar',
-        label:           'Baseline Fine',
-        data:            baseFines,
-        backgroundColor: 'rgba(150,150,150,0.45)',
-        borderColor:     'rgba(120,120,120,0.6)',
-        borderWidth:     1,
-        yAxisID:         'y2',
-        order:           6,
+        type: 'bar', label: 'Baseline Fine', data: cachedBaseFines,
+        backgroundColor: 'rgba(150,150,150,0.45)', borderColor: 'rgba(110,110,110,0.6)',
+        borderWidth: 1, yAxisID: 'y2', order: 4,
       },
-      // Scenario fine bars — orange
+      // Scenario fine bars — orange, RIGHT
       {
-        type:            'bar',
-        label:           `${scenarioName} Fine`,
-        data:            scenFines,
-        backgroundColor: 'rgba(211,84,0,0.65)',
-        borderColor:     '#d35400',
-        borderWidth:     1,
-        yAxisID:         'y2',
-        order:           5,
+        type: 'bar', label: `${scenarioName} Fine`, data: scenFines,
+        backgroundColor: 'rgba(211,84,0,0.65)', borderColor: '#d35400',
+        borderWidth: 1, yAxisID: 'y2', order: 5,
       },
-      // Baseline GHG — grey dashed, behind scenario line
+      // Baseline GHG — grey dashed (behind scenario line)
       {
-        type:            'line',
-        label:           'Baseline GHG Emissions',
-        data:            baseEmissions,
-        borderColor:     'rgba(130,130,130,0.7)',
-        backgroundColor: 'transparent',
-        borderDash:      [4, 4],
-        yAxisID:         'y',
-        tension:         0,
-        pointRadius:     0,
-        borderWidth:     2,
-        fill:            false,
-        order:           3,
+        type: 'line', label: 'Baseline GHG Emissions', data: baseEmissions,
+        borderColor: 'rgba(130,130,130,0.7)', backgroundColor: 'transparent',
+        borderDash: [4,4], yAxisID: 'y', tension: 0, pointRadius: 0,
+        borderWidth: 2, fill: false, order: 3,
       },
       // Scenario GHG — red solid, on top
       {
-        type:            'line',
-        label:           `${scenarioName} GHG Emissions`,
-        data:            scenEmissions,
-        borderColor:     '#c0392b',
-        backgroundColor: 'rgba(192,57,43,0.07)',
-        yAxisID:         'y',
-        tension:         0,
-        pointRadius:     3,
-        pointHoverRadius: 5,
-        borderWidth:     2.5,
-        fill:            false,
-        order:           1,
+        type: 'line', label: `${scenarioName} GHG Emissions`, data: scenEmissions,
+        borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.07)',
+        yAxisID: 'y', tension: 0, pointRadius: 3, pointHoverRadius: 5,
+        borderWidth: 2.5, fill: false, order: 1,
       },
-      // Emissions limit — green, always
+      // Limit — green
       {
-        type:            'line',
-        label:           'Emissions Limit',
-        data:            limits,
-        borderColor:     '#27ae60',
-        backgroundColor: 'rgba(39,174,96,0.07)',
-        yAxisID:         'y',
-        tension:         0,
-        pointRadius:     3,
-        pointHoverRadius: 5,
-        borderWidth:     2.5,
-        fill:            false,
-        order:           2,
+        type: 'line', label: 'Emissions Limit', data: limits,
+        borderColor: '#27ae60', backgroundColor: 'rgba(39,174,96,0.07)',
+        yAxisID: 'y', tension: 0, pointRadius: 3, pointHoverRadius: 5,
+        borderWidth: 2.5, fill: false, order: 2,
       },
-      // Scenario cumulative fine — purple dashed
+      // Scenario cumulative fine
       {
-        type:            'line',
-        label:           `${scenarioName} Cumulative Fine`,
-        data:            cumulativeFines,
-        borderColor:     '#8e44ad',
-        backgroundColor: 'transparent',
-        borderDash:      [6, 3],
-        yAxisID:         'y2',
-        tension:         0,
-        pointRadius:     2,
-        pointHoverRadius: 4,
-        borderWidth:     2,
-        fill:            false,
-        order:           4,
+        type: 'line', label: `${scenarioName} Cumulative Fine`, data: cumulativeFines,
+        borderColor: '#8e44ad', backgroundColor: 'transparent', borderDash: [6,3],
+        yAxisID: 'y2', tension: 0, pointRadius: 2, pointHoverRadius: 4,
+        borderWidth: 2, fill: false, order: 6,
       },
     ];
   } else {
-    // ── Baseline-only mode (original behaviour) ─────────────────────────────
-    hasFine = baseHasFine;
-
-    cumulativeFines = [];
+    hasFine = cachedBaseFines.map(f => f > 0);
     let cum = 0;
-    for (const f of baseFines) { cum += f; cumulativeFines.push(cum); }
+    cumulativeFines = cachedBaseFines.map(f => (cum += f));
 
     datasets = [
       {
-        type:            'bar',
-        label:           'Annual Fine',
-        data:            baseFines,
-        backgroundColor: 'rgba(211,84,0,0.65)',
-        borderColor:     '#d35400',
-        borderWidth:     1,
-        yAxisID:         'y2',
-        order:           4,
+        type: 'bar', label: 'Annual Fine', data: cachedBaseFines,
+        backgroundColor: 'rgba(211,84,0,0.65)', borderColor: '#d35400',
+        borderWidth: 1, yAxisID: 'y2', order: 4,
       },
       {
-        type:            'line',
-        label:           'Baseline GHG Emissions',
-        data:            baseEmissions,
-        borderColor:     '#c0392b',
-        backgroundColor: 'rgba(192,57,43,0.07)',
-        yAxisID:         'y',
-        tension:         0,
-        pointRadius:     3,
-        pointHoverRadius: 5,
-        borderWidth:     2.5,
-        fill:            false,
-        order:           1,
+        type: 'line', label: 'Baseline GHG Emissions', data: baseEmissions,
+        borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.07)',
+        yAxisID: 'y', tension: 0, pointRadius: 3, pointHoverRadius: 5,
+        borderWidth: 2.5, fill: false, order: 1,
       },
       {
-        type:            'line',
-        label:           'Emissions Limit',
-        data:            limits,
-        borderColor:     '#27ae60',
-        backgroundColor: 'rgba(39,174,96,0.07)',
-        yAxisID:         'y',
-        tension:         0,
-        pointRadius:     3,
-        pointHoverRadius: 5,
-        borderWidth:     2.5,
-        fill:            false,
-        order:           2,
+        type: 'line', label: 'Emissions Limit', data: limits,
+        borderColor: '#27ae60', backgroundColor: 'rgba(39,174,96,0.07)',
+        yAxisID: 'y', tension: 0, pointRadius: 3, pointHoverRadius: 5,
+        borderWidth: 2.5, fill: false, order: 2,
       },
       {
-        type:            'line',
-        label:           'Cumulative Fine',
-        data:            cumulativeFines,
-        borderColor:     '#8e44ad',
-        backgroundColor: 'transparent',
-        borderDash:      [6, 3],
-        yAxisID:         'y2',
-        tension:         0,
-        pointRadius:     2,
-        pointHoverRadius: 4,
-        borderWidth:     2,
-        fill:            false,
-        order:           3,
+        type: 'line', label: 'Cumulative Fine', data: cumulativeFines,
+        borderColor: '#8e44ad', backgroundColor: 'transparent', borderDash: [6,3],
+        yAxisID: 'y2', tension: 0, pointRadius: 2, pointHoverRadius: 4,
+        borderWidth: 2, fill: false, order: 3,
       },
     ];
   }
 
-  // Show building name and reveal chart card
   document.getElementById('manage-building-name').textContent = buildingName;
   document.getElementById('manage-loading').classList.add('hidden');
   document.getElementById('manage-chart-container').classList.remove('hidden');
 
   const ctx = document.getElementById('manage-chart').getContext('2d');
-
   manageChart = new Chart(ctx, {
     type: 'bar',
-    data: { labels: years, datasets },
+    data: { labels: cachedYears, datasets },
     options: {
-      responsive:          true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: {
-          position: 'top',
-          labels: { usePointStyle: true, padding: 18, font: { size: 12 } },
-        },
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 18, font: { size: 12 } } },
         tooltip: {
           callbacks: {
             label: ctx => {
               const v = ctx.parsed.y;
-              if (ctx.dataset.yAxisID === 'y2')
-                return `  ${ctx.dataset.label}: $${v.toLocaleString('en-US')}`;
-              return `  ${ctx.dataset.label}: ${v.toLocaleString('en-US')} tCO₂e`;
+              return ctx.dataset.yAxisID === 'y2'
+                ? `  ${ctx.dataset.label}: $${v.toLocaleString('en-US')}`
+                : `  ${ctx.dataset.label}: ${v.toLocaleString('en-US')} tCO₂e`;
             },
           },
         },
       },
       scales: {
         x: {
-          title: {
-            display: true,
-            text:    'Year',
-            font:    { size: 12, weight: 'bold' },
-            color:   '#495057',
-          },
+          title: { display: true, text: 'Year', font: { size: 12, weight: 'bold' }, color: '#495057' },
           ticks: {
             color: ctx => hasFine[ctx.index] ? '#c0392b' : '#495057',
             font:  ctx => ({ size: 11, weight: hasFine[ctx.index] ? 'bold' : 'normal' }),
@@ -387,24 +282,14 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
         },
         y: {
           position: 'left',
-          title: {
-            display: true,
-            text:    'GHG Emissions (tCO₂e)',
-            font:    { size: 12, weight: 'bold' },
-            color:   '#c0392b',
-          },
+          title: { display: true, text: 'GHG Emissions (tCO₂e)', font: { size: 12, weight: 'bold' }, color: '#c0392b' },
           beginAtZero: true,
           ticks: { callback: v => v.toLocaleString('en-US') },
           grid: { color: 'rgba(0,0,0,0.05)' },
         },
         y2: {
           position: 'right',
-          title: {
-            display: true,
-            text:    'Fine Amount ($)',
-            font:    { size: 12, weight: 'bold' },
-            color:   '#d35400',
-          },
+          title: { display: true, text: 'Fine Amount ($)', font: { size: 12, weight: 'bold' }, color: '#d35400' },
           beginAtZero: true,
           ticks: { callback: v => '$' + v.toLocaleString('en-US') },
           grid: { drawOnChartArea: false },
@@ -414,7 +299,214 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
   });
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// ── FINANCIAL TABLE ───────────────────────────────────────────────────────────
+
+function buildFinancialTable() {
+  const container = document.getElementById('manage-fin-container');
+  if (!container || !baseUtilityCosts || !cachedYears.length) return;
+  container.innerHTML = '';
+  container.classList.remove('hidden');
+
+  const hasScen = Array.isArray(cachedScenData) && cachedScenData.length > 0;
+
+  // ── Section wrapper
+  const section = document.createElement('section');
+  section.className = 'card wide-card';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'fin-hdr';
+  hdr.innerHTML = `
+    <div>
+      <h2 class="card-title">Financial Summary — Year by Year</h2>
+      <p class="card-desc" style="margin-bottom:.5rem">
+        Annual energy costs at default prices
+        (electricity&nbsp;$0.15/kWh · nat.&nbsp;gas&nbsp;$1.50/therm · steam&nbsp;$18/mLb ·
+        oil&nbsp;#2&nbsp;$3.00/gal · oil&nbsp;#4&nbsp;$2.90/gal),
+        LL97 fines${hasScen ? ', and one-time measure capital costs' : ''}.
+      </p>
+    </div>
+    <button id="fin-fuel-toggle" class="btn btn-ghost btn-sm" style="white-space:nowrap;align-self:flex-start">
+      ${showFuelDetail ? '&#8722; Hide Fuel Detail' : '&#43; Show Fuel Detail'}
+    </button>`;
+  section.appendChild(hdr);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'fin-table-wrap';
+  wrap.appendChild(buildFinTable(hasScen));
+  section.appendChild(wrap);
+  container.appendChild(section);
+
+  document.getElementById('fin-fuel-toggle').addEventListener('click', () => {
+    showFuelDetail = !showFuelDetail;
+    buildFinancialTable();
+  });
+}
+
+function buildFinTable(hasScen) {
+  const table = document.createElement('table');
+  table.className = 'fin-table';
+
+  // ── THEAD ─────────────────────────────────────────────────────────────────
+  const thead = document.createElement('thead');
+  // Row 1 — group labels
+  const gr = document.createElement('tr');
+  gr.className = 'fin-group-row';
+
+  const yearGrTh = document.createElement('th');
+  yearGrTh.rowSpan = 2;
+  yearGrTh.textContent = 'Year';
+  gr.appendChild(yearGrTh);
+
+  const baseCols = showFuelDetail ? 7 : 2;   // 5 fuels + total + fine  OR  total + fine
+  const scenCols = showFuelDetail ? 9 : 3;   // + measure cost
+
+  const baseTh = document.createElement('th');
+  baseTh.colSpan = baseCols;
+  baseTh.className = 'fin-group-th fin-base-th';
+  baseTh.textContent = 'Baseline';
+  gr.appendChild(baseTh);
+
+  if (hasScen) {
+    const scenTh = document.createElement('th');
+    scenTh.colSpan = scenCols;
+    scenTh.className = 'fin-group-th fin-scen-th';
+    scenTh.textContent = cachedScenName;
+    gr.appendChild(scenTh);
+  }
+  thead.appendChild(gr);
+
+  // Row 2 — column labels
+  const cr = document.createElement('tr');
+  function colTh(html, cls) {
+    const th = document.createElement('th');
+    th.innerHTML = html;
+    if (cls) th.className = cls;
+    cr.appendChild(th);
+  }
+  if (showFuelDetail) {
+    FUEL_KEYS.forEach(k => colTh(DEFAULT_PRICES[k].label, 'fin-fuel-col fin-base-col'));
+    colTh('Total Energy', 'fin-base-col fin-tot-col');
+  } else {
+    colTh('Energy Cost', 'fin-base-col fin-tot-col');
+  }
+  colTh('Fine', 'fin-base-col fin-fine-col');
+
+  if (hasScen) {
+    if (showFuelDetail) {
+      FUEL_KEYS.forEach(k => colTh(DEFAULT_PRICES[k].label, 'fin-fuel-col fin-scen-col'));
+      colTh('Total Energy', 'fin-scen-col fin-tot-col');
+    } else {
+      colTh('Energy Cost', 'fin-scen-col fin-tot-col');
+    }
+    colTh('Fine', 'fin-scen-col fin-fine-col');
+    colTh('Measure Cost', 'fin-scen-col fin-measure-col');
+  }
+  thead.appendChild(cr);
+  table.appendChild(thead);
+
+  // ── TBODY ─────────────────────────────────────────────────────────────────
+  const tbody = document.createElement('tbody');
+  const tot = {
+    baseEnergy: 0, baseFine: 0,
+    scenEnergy: 0, scenFine: 0, measureCost: 0,
+    baseFuels: Object.fromEntries(FUEL_KEYS.map(k => [k, 0])),
+    scenFuels:  Object.fromEntries(FUEL_KEYS.map(k => [k, 0])),
+  };
+
+  cachedYears.forEach((yr, i) => {
+    const bFine  = cachedBaseFines[i] || 0;
+    const bTotal = baseUtilityCosts.total || 0;
+    const sd     = hasScen ? cachedScenData[i] : null;
+
+    const tr = document.createElement('tr');
+    function td(html, cls, isNeg) {
+      const cell = document.createElement('td');
+      cell.innerHTML = html;
+      cell.className = (cls || '') + (isNeg ? ' fin-neg' : '');
+      tr.appendChild(cell);
+    }
+
+    td(yr, 'fin-year-td');
+
+    // Baseline energy
+    if (showFuelDetail) {
+      FUEL_KEYS.forEach(k => {
+        const v = baseUtilityCosts[k] || 0;
+        tot.baseFuels[k] += v;
+        td($f(v), 'fin-base-col fin-fuel-col');
+      });
+      tot.baseEnergy += bTotal;
+      td('<strong>' + $d(bTotal) + '</strong>', 'fin-base-col fin-tot-col');
+    } else {
+      tot.baseEnergy += bTotal;
+      td($d(bTotal), 'fin-base-col fin-tot-col');
+    }
+    // Baseline fine
+    tot.baseFine += bFine;
+    td($f(bFine), 'fin-base-col fin-fine-col' + (bFine > 0 ? ' fin-fine-nz' : ''));
+
+    if (sd) {
+      const sTotal = sd.energy_cost?.total || 0;
+      const sFine  = sd.fine || 0;
+      const mCost  = sd.measure_cost || 0;
+
+      if (showFuelDetail) {
+        FUEL_KEYS.forEach(k => {
+          const v = sd.energy_cost?.[k] || 0;
+          tot.scenFuels[k] += v;
+          td($f(v), 'fin-scen-col fin-fuel-col');
+        });
+        tot.scenEnergy += sTotal;
+        td('<strong>' + $d(sTotal) + '</strong>', 'fin-scen-col fin-tot-col');
+      } else {
+        tot.scenEnergy += sTotal;
+        td($d(sTotal), 'fin-scen-col fin-tot-col');
+      }
+      tot.scenFine += sFine;
+      td($f(sFine), 'fin-scen-col fin-fine-col' + (sFine > 0 ? ' fin-fine-nz' : ''));
+      tot.measureCost += mCost;
+      td($f(mCost), 'fin-scen-col fin-measure-col' + (mCost > 0 ? ' fin-measure-nz' : ''));
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  // ── TFOOT ─────────────────────────────────────────────────────────────────
+  const tfoot = document.createElement('tfoot');
+  const ttr   = document.createElement('tr');
+  ttr.className = 'fin-totals-row';
+  function ttd(html, cls) {
+    const cell = document.createElement('td');
+    cell.innerHTML = html;
+    if (cls) cell.className = cls;
+    ttr.appendChild(cell);
+  }
+  ttd('<strong>27-Year Total</strong>', 'fin-year-td');
+  if (showFuelDetail) {
+    FUEL_KEYS.forEach(k => ttd('<strong>' + $d(tot.baseFuels[k]) + '</strong>', 'fin-base-col fin-fuel-col'));
+    ttd('<strong>' + $d(tot.baseEnergy) + '</strong>', 'fin-base-col fin-tot-col');
+  } else {
+    ttd('<strong>' + $d(tot.baseEnergy) + '</strong>', 'fin-base-col fin-tot-col');
+  }
+  ttd('<strong>' + $d(tot.baseFine) + '</strong>', 'fin-base-col fin-fine-col');
+  if (hasScen) {
+    if (showFuelDetail) {
+      FUEL_KEYS.forEach(k => ttd('<strong>' + $d(tot.scenFuels[k]) + '</strong>', 'fin-scen-col fin-fuel-col'));
+      ttd('<strong>' + $d(tot.scenEnergy) + '</strong>', 'fin-scen-col fin-tot-col');
+    } else {
+      ttd('<strong>' + $d(tot.scenEnergy) + '</strong>', 'fin-scen-col fin-tot-col');
+    }
+    ttd('<strong>' + $d(tot.scenFine) + '</strong>', 'fin-scen-col fin-fine-col');
+    ttd('<strong>' + $d(tot.measureCost) + '</strong>', 'fin-scen-col fin-measure-col');
+  }
+  tfoot.appendChild(ttr);
+  table.appendChild(tfoot);
+
+  return table;
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────────
 
 function showNoBuilding() {
   document.getElementById('manage-loading').classList.add('hidden');

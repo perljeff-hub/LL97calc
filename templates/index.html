@@ -25,8 +25,17 @@
     <nav class="header-nav">
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link active">Calculate</a>
-      <a id="manage-nav-link" class="nav-link nav-link-disabled" title="Save or Load a Saved Building to enable Manage">Manage</a>
-      <a id="rp-nav-link" class="nav-link nav-link-disabled" title="Save or Load a Saved Building to enable Reduction Plan">Reduction Plan</a>
+      <!-- Manage dropdown — disabled until a building is saved/loaded -->
+      <div class="nav-dropdown disabled" id="manage-nav-dropdown" title="Save or Load a Saved Building to enable Manage">
+        <a class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Compliance Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
