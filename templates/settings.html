@@ -26,12 +26,12 @@
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
       <div class="nav-dropdown disabled" id="manage-nav-dropdown" title="Save or Load a Saved Building to enable Manage">
-        <a class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
+        <a href="/manage" class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
           Manage
           <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
         </a>
         <div class="nav-dropdown-menu" id="manage-nav-menu">
-          <a href="/manage" class="nav-dropdown-item">Compliance Timeline</a>
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
           <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
         </div>
       </div>
@@ -257,6 +257,26 @@ document.querySelectorAll('.factor-input').forEach(input => {
   input.addEventListener('input', check);
   check();
 });
+
+// Nav dropdown — show on hover, close after 3 s of mouse-out
+(function() {
+  var dd = document.getElementById('manage-nav-dropdown');
+  var menu = document.getElementById('manage-nav-menu');
+  if (!dd || !menu) return;
+  var timer = null;
+  dd.addEventListener('mouseenter', function() {
+    if (dd.classList.contains('disabled')) return;
+    if (timer) { clearTimeout(timer); timer = null; }
+    menu.classList.add('open');
+    dd.classList.add('open');
+  });
+  dd.addEventListener('mouseleave', function() {
+    timer = setTimeout(function() {
+      menu.classList.remove('open');
+      dd.classList.remove('open');
+    }, 3000);
+  });
+})();
 </script>
 </body>
 </html>
