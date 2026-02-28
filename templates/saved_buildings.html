@@ -23,15 +23,6 @@
     </div>
     <nav class="header-nav">
       <a href="/saved-buildings" class="nav-link active">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem">
-          <rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>
-          <rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>
-          <rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>
-          <rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>
-          <rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>
-          <path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>
-          <path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-        </svg>
         Saved Buildings
       </a>
       <div id="active-building-nav" class="active-building-nav"></div>
@@ -55,7 +46,7 @@
 
   <section class="card wide-card">
     <h2 class="card-title">Saved Buildings</h2>
-    <p class="card-desc">Click a building to open its Compliance Timeline.</p>
+    <p class="card-desc">Click a building to load it into the Calculator.</p>
 
     <div id="sb-loading" class="manage-status-card">
       <p class="manage-status-text">Loading…</p>
@@ -148,7 +139,7 @@
       buildings.forEach(b => {
         const tr = document.createElement('tr');
         tr.className = 'sb-row';
-        tr.title = 'Open ' + b.save_name + ' in Compliance Timeline';
+        tr.title = 'Load ' + b.save_name + ' into the Calculator';
         const gfa = b.gross_floor_area ? Number(b.gross_floor_area).toLocaleString('en-US') + ' sf' : '—';
         const saved = b.saved_at ? b.saved_at.slice(0, 10) : '—';
         tr.innerHTML =
@@ -175,12 +166,31 @@
       if (!resp.ok) throw new Error('Building not found');
       const data = await resp.json();
       const b = data.building;
-      // Build the ll97_calc_state that manage.js expects
       const occ = (b.occupancy_groups || []).map(g => ({type: g.property_type, area: String(g.floor_area)}));
+      // Build buildingData so the Calculate tab populates Building Lookup
+      const buildingData = {
+        source:            'saved',
+        save_name:         b.save_name,
+        bbl:               b.source_bbl || '',
+        bin:               b.source_bin || '',
+        property_name:     b.property_name || '',
+        address:           b.address || '',
+        borough:           b.borough || '',
+        postcode:          b.postcode || '',
+        year_ending:       b.year_ending || '',
+        gross_floor_area:  b.gross_floor_area || null,
+        energy_star_score: b.energy_star_score || '',
+        electricity_kwh:   b.electricity_kwh || null,
+        natural_gas_therms: b.natural_gas_therms || null,
+        district_steam_mlb: b.district_steam_mlb || null,
+        fuel_oil_2_gal:    b.fuel_oil_2_gal || null,
+        fuel_oil_4_gal:    b.fuel_oil_4_gal || null,
+        occupancy_groups:  b.occupancy_groups || [],
+      };
       const state = {
-        saveName:    b.save_name,
-        buildingData: null,
-        isDirty:     false,
+        saveName:     b.save_name,
+        buildingData: buildingData,
+        isDirty:      false,
         form: {
           elec:  String(b.electricity_kwh    || ''),
           gas:   String(b.natural_gas_therms  || ''),
@@ -193,7 +203,7 @@
       };
       sessionStorage.setItem('ll97_calc_state', JSON.stringify(state));
       sessionStorage.setItem('ll97_active', JSON.stringify({saveName: b.save_name}));
-      window.location.href = '/manage';
+      window.location.href = '/';
     } catch(e) {
       alert('Could not load building: ' + e.message);
     }

@@ -23,10 +23,7 @@
       </div>
     </div>
     <nav class="header-nav">
-      <a href="/saved-buildings" class="nav-link">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem"><rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/><path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        Saved Buildings
-      </a>
+      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link active">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
@@ -66,43 +63,59 @@
   </section>
 
   <!-- ── ENERGY INPUTS ────────────────────────────────────────────────────── -->
-  <div class="three-col">
+  <div class="two-col-energy">
 
     <section class="card" id="energy-section">
-      <h2 class="card-title">Annual Energy Consumption</h2>
-      <p class="card-desc">Enter the building's annual energy use. Leave blank if not applicable.</p>
+      <h2 class="card-title">Annual Energy Usage</h2>
+      <p class="card-desc">Enter the building's annual energy use. Prices are from <a href="/settings">Settings</a>.</p>
 
-      <div class="input-group">
-        <label class="input-label" for="elec">Electricity <span class="unit">(kWh)</span></label>
-        <input type="number" id="elec" class="form-input" min="0" placeholder="0" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="gas">Natural Gas <span class="unit">(therms)</span></label>
-        <input type="number" id="gas" class="form-input" min="0" placeholder="0" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="steam">District Steam <span class="unit">(Mlb — thousands of lbs)</span></label>
-        <input type="number" id="steam" class="form-input" min="0" placeholder="0" step="0.001" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="fo2">#2 Fuel Oil <span class="unit">(gallons)</span></label>
-        <input type="number" id="fo2" class="form-input" min="0" placeholder="0" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="fo4">#4 Fuel Oil <span class="unit">(gallons)</span></label>
-        <input type="number" id="fo4" class="form-input" min="0" placeholder="0" />
-      </div>
-    </section>
+      <div class="energy-usage-table">
+        <div class="eu-header">
+          <span>Fuel Type</span>
+          <span>Annual Usage</span>
+          <span>Price</span>
+          <span>Est. Annual Cost</span>
+        </div>
 
-    <!-- ── ENERGY PRICES (read-only) ───────────────────────────────────────── -->
-    <section class="card" id="prices-section">
-      <h2 class="card-title">Energy Prices</h2>
-      <p class="card-desc">
-        Used for utility cost analysis on the Timeline tab.
-        To edit energy prices, go to <a href="/settings">Settings</a>.
-      </p>
-      <div id="prices-display" class="prices-display">
-        <!-- Populated by JS from /api/settings/prices -->
+        <div class="eu-row">
+          <label class="eu-label" for="elec">Electricity <span class="unit">(kWh)</span></label>
+          <input type="number" id="elec" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-elec">—</span>
+          <span class="eu-cost" id="eu-cost-elec"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="gas">Natural Gas <span class="unit">(therms)</span></label>
+          <input type="number" id="gas" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-gas">—</span>
+          <span class="eu-cost" id="eu-cost-gas"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="steam">District Steam <span class="unit">(Mlb)</span></label>
+          <input type="number" id="steam" class="form-input eu-input" min="0" placeholder="0" step="0.001" />
+          <span class="eu-price" id="eu-price-steam">—</span>
+          <span class="eu-cost" id="eu-cost-steam"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="fo2">#2 Fuel Oil <span class="unit">(gal)</span></label>
+          <input type="number" id="fo2" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-fo2">—</span>
+          <span class="eu-cost" id="eu-cost-fo2"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="fo4">#4 Fuel Oil <span class="unit">(gal)</span></label>
+          <input type="number" id="fo4" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-fo4">—</span>
+          <span class="eu-cost" id="eu-cost-fo4"></span>
+        </div>
+
+        <div class="eu-total-row">
+          <span class="eu-total-label">Total Estimated Annual Energy Cost</span>
+          <span class="eu-total-cost" id="eu-cost-total">—</span>
+        </div>
       </div>
     </section>
 
@@ -133,12 +146,6 @@
 
   <!-- ── RESULTS ──────────────────────────────────────────────────────────── -->
   <section id="results-section" class="hidden">
-
-    <!-- Utility Costs -->
-    <section class="card" id="costs-card">
-      <h2 class="card-title">Annual Utility Costs</h2>
-      <div class="costs-grid" id="costs-grid"></div>
-    </section>
 
     <!-- Emissions Results (one column per period) -->
     <section class="card wide-card" id="periods-card">
@@ -199,30 +206,6 @@ window.COMPLIANCE_PERIODS   = {{ compliance_periods | tojson }};
 window.PERIOD_LABELS         = {{ period_labels | tojson }};
 </script>
 <script>
-// Load and display current energy prices (read-only)
-(function() {
-  fetch('/api/settings/prices').then(r => r.json()).then(data => {
-    const prices = data.prices || {};
-    const meta = [
-      {key:'electricity_kwh',    label:'Electricity',    unit:'$/kWh'},
-      {key:'natural_gas_therm',  label:'Natural Gas',    unit:'$/therm'},
-      {key:'district_steam_mlb', label:'District Steam', unit:'$/mLb'},
-      {key:'fuel_oil_2_gal',     label:'#2 Fuel Oil',    unit:'$/gal'},
-      {key:'fuel_oil_4_gal',     label:'#4 Fuel Oil',    unit:'$/gal'},
-    ];
-    const el = document.getElementById('prices-display');
-    if (!el) return;
-    el.innerHTML = meta.map(m => {
-      const p = prices[m.key] || {};
-      return `<div class="price-ro-row">
-        <span class="price-ro-label">${m.label}</span>
-        <span class="price-ro-val">${p.price ?? '—'} <span class="unit">${m.unit}</span></span>
-        <span class="price-ro-esc">+${p.escalator ?? 3}%/yr</span>
-      </div>`;
-    }).join('');
-  }).catch(() => {});
-})();
-
 // Nav dropdown — show on hover, close after 3 s of mouse-out
 (function() {
   var dd = document.getElementById('manage-nav-dropdown');
