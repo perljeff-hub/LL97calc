@@ -23,10 +23,7 @@
       </div>
     </div>
     <nav class="header-nav">
-      <a href="/saved-buildings" class="nav-link">
-        
-        Saved Buildings
-      </a>
+      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — Reduction Plan is the active sub-item -->
@@ -71,8 +68,14 @@
       <div class="rp-scenario-left">
         <span class="rp-scenario-label">Scenario:</span>
         <select id="rp-scenario-select" class="rp-scenario-select"></select>
+        <button id="rp-see-timeline-btn" class="btn btn-ghost btn-sm" title="View this scenario on the Compliance Timeline">
+          See Scenario on Timeline →
+        </button>
       </div>
       <div class="rp-scenario-right">
+        <button id="rp-suggest-btn" class="btn btn-secondary btn-sm" disabled title="Add at least one measure to enable Suggest a Plan">
+          ✦ Suggest a Plan
+        </button>
         <div class="rp-save-group">
           <button id="rp-save-btn" class="btn btn-save">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -177,10 +180,10 @@
         </div>
       </div>
 
-      <!-- RIGHT: Timeline -->
+      <!-- RIGHT: Reduction Plan timeline -->
       <div class="rp-timeline-panel card">
         <h2 class="card-title">
-          Timeline
+          Reduction Plan
           <span class="rp-timeline-hint">Drag measures from the list and drop them onto a year</span>
         </h2>
         <div id="rp-timeline" class="rp-timeline">
@@ -227,7 +230,7 @@
   </div>
 </footer>
 
-<!-- Active building chip -->
+<!-- Nav dropdown + active chip script -->
 <script>
 (function() {
   try {
@@ -244,7 +247,7 @@
         '<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
         '<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
         '<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-        '</svg><span>' + esc + '</span></span>';
+        '</svg><span class="active-building-chip-name">' + esc + '</span></span>';
     }
   } catch(e) {}
 })();
@@ -278,6 +281,70 @@
     <div class="rp-warn-actions">
       <button id="rp-warn-yes" class="btn btn-primary btn-sm">Yes, Keep Value</button>
       <button id="rp-warn-no" class="btn btn-secondary btn-sm">No, Clear Field</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SUGGEST A PLAN MODAL ───────────────────────────────────────────────── -->
+<div id="rp-suggest-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rp-suggest-title">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="rp-suggest-title">✦ Suggest a Plan</h3>
+      <button id="rp-suggest-close" class="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Mode -->
+      <div>
+        <div class="rp-suggest-section-label">Optimization Mode</div>
+        <label class="rp-suggest-option">
+          <input type="radio" name="rp-suggest-mode" value="minimize_cost" checked />
+          <span>Minimize Overall Cost
+            <span class="rp-suggest-desc">Recommends when to implement measures to minimize the total of energy costs + fines + capital costs through 2050. Measures are only placed when cost-effective.</span>
+          </span>
+        </label>
+        <label class="rp-suggest-option">
+          <input type="radio" name="rp-suggest-mode" value="minimize_fines" />
+          <span>Minimize Fines
+            <span class="rp-suggest-desc">Selects the lowest-cost combination of measures to achieve compliance, placed at the latest possible year they are needed.</span>
+          </span>
+        </label>
+      </div>
+      <!-- Scope -->
+      <div style="margin-top:.85rem">
+        <div class="rp-suggest-section-label">Scope</div>
+        <label class="rp-suggest-option">
+          <input type="radio" name="rp-suggest-scope" value="all" checked />
+          <span>Suggest Placement for All Measures
+            <span class="rp-suggest-desc">Replaces all current timeline placements with the suggested plan.</span>
+          </span>
+        </label>
+        <label class="rp-suggest-option">
+          <input type="radio" name="rp-suggest-scope" value="unplaced" />
+          <span>Suggest Placement for Unplaced Measures Only
+            <span class="rp-suggest-desc">Keeps intentionally placed measures in their current years and only places unplaced measures.</span>
+          </span>
+        </label>
+      </div>
+      <!-- Discount rate -->
+      <div style="margin-top:.85rem">
+        <label class="rp-suggest-option">
+          <input type="checkbox" id="rp-suggest-use-discount" />
+          <span>Apply discount rate (NPV)
+            <span class="rp-suggest-desc">Accounts for time value of money when evaluating future savings. Only affects Minimize Overall Cost mode.</span>
+          </span>
+        </label>
+        <div id="rp-suggest-discount-row" class="rp-suggest-discount-row hidden">
+          <label for="rp-suggest-discount-rate">Discount Rate</label>
+          <input type="number" id="rp-suggest-discount-rate" class="form-input" value="5" min="0" max="20" step="0.5" />
+          <span>% per year</span>
+        </div>
+      </div>
+      <!-- Status -->
+      <div id="rp-suggest-status" class="rp-suggest-status hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="rp-suggest-cancel-btn" class="btn btn-secondary">Cancel</button>
+      <button id="rp-suggest-run-btn" class="btn btn-primary">Suggest a Plan</button>
     </div>
   </div>
 </div>

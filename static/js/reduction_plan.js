@@ -36,6 +36,8 @@ let _warnResolve = null;
 
 // Track which measure card is currently being edited (id or null)
 let editingMeasureId  = null;
+let isDirty           = false;       // unsaved timeline changes
+let baselineOccupancyGroups = null;  // occupancy groups from session state
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!state.saveName) { showNoBuilding(); return; }
     currentBuilding = state.saveName;
 
-    // Load baseline energy usage for savings validation
+    // Load baseline energy usage and occupancy for savings validation + suggest plan
     if (state.form) {
       baselineEnergy = {
         elec:  parseFloat(state.form.elec)  || 0,
@@ -56,6 +58,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         fo2:   parseFloat(state.form.fo2)   || 0,
         fo4:   parseFloat(state.form.fo4)   || 0,
       };
+    }
+    if (state.occRows) {
+      baselineOccupancyGroups = (state.occRows || [])
+        .map(r => ({property_type: r.type, floor_area: parseFloat(r.area) || 0}))
+        .filter(g => g.property_type && g.floor_area > 0);
     }
   } catch (e) {
     showNoBuilding();
@@ -66,6 +73,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await Promise.all([loadMeasures(), loadScenarios()]);
     buildTimeline();
     bindEventListeners();
+    updateSuggestBtn();
+    window.addEventListener('beforeunload', e => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    });
     hideLoading();
     showMain();
   } catch (e) {
@@ -127,6 +138,7 @@ async function loadScenarioPlacements(scenarioId) {
       placements[p.year].push(p.measure_id);
     }
   });
+  markClean();
 }
 
 // ── Build UI ──────────────────────────────────────────────────────────────────
@@ -556,6 +568,7 @@ function onDrop(e, targetYear) {
   renderTimelineYear(targetYear);
   renderMeasuresList();
   updateSummaryTable();
+  markDirty();
 }
 
 function removePlacement(year, measureId) {
@@ -564,6 +577,7 @@ function removePlacement(year, measureId) {
   renderTimelineYear(year);
   renderMeasuresList();
   updateSummaryTable();
+  markDirty();
 }
 
 function getPlacedIds() {
@@ -669,6 +683,7 @@ async function addMeasure() {
     clearAddForm();
     document.getElementById('rp-add-form').classList.add('hidden');
     renderMeasuresList();
+    updateSuggestBtn();
     showToast('Measure added');
   } catch (e) {
     errEl.textContent = e.message;
@@ -691,6 +706,7 @@ async function deleteMeasure(id) {
     renderAllTimelineYears();
     renderMeasuresList();
     updateSummaryTable();
+    updateSuggestBtn();
     showToast('Measure deleted');
   } catch (e) {
     showError('Failed to delete measure: ' + e.message);
@@ -716,6 +732,7 @@ async function handleUpload(file) {
 
     measures.push(...data.created);
     renderMeasuresList();
+    updateSuggestBtn();
 
     let msg = `${data.created.length} measure(s) imported.`;
     if (data.errors && data.errors.length) {
@@ -780,6 +797,7 @@ async function saveScenario(asNew) {
 
     statusEl.textContent = 'Saved \u2713';
     statusEl.classList.add('rp-save-ok');
+    markClean();
     showToast(asNew ? `${data.scenario.name} saved` : 'Scenario saved');
   } catch (e) {
     statusEl.textContent = 'Save failed';
@@ -863,6 +881,41 @@ function bindEventListeners() {
       if (_warnResolve) { _warnResolve(false); _warnResolve = null; }
     });
   }
+
+  // Nav guard — confirm before leaving with unsaved changes
+  document.querySelectorAll('.nav-link, .nav-dropdown-item').forEach(link => {
+    link.addEventListener('click', e => {
+      if (!isDirty) return;
+      const href = link.getAttribute('href');
+      if (!href || href === '#' || href === window.location.pathname) return;
+      e.preventDefault();
+      if (confirm('You have unsaved changes to this scenario. Leave without saving?')) {
+        isDirty = false;
+        window.location.href = href;
+      }
+    });
+  });
+
+  // "See Scenario on Timeline" button
+  document.getElementById('rp-see-timeline-btn').addEventListener('click', () => {
+    if (currentScenarioId) {
+      sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+    }
+    isDirty = false;  // prevent nav guard from blocking
+    window.location.href = '/manage';
+  });
+
+  // Suggest Plan modal
+  document.getElementById('rp-suggest-btn').addEventListener('click', openSuggestModal);
+  document.getElementById('rp-suggest-close').addEventListener('click', closeSuggestModal);
+  document.getElementById('rp-suggest-cancel-btn').addEventListener('click', closeSuggestModal);
+  document.getElementById('rp-suggest-run-btn').addEventListener('click', runSuggestPlan);
+  document.getElementById('rp-suggest-backdrop').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeSuggestModal();
+  });
+  document.getElementById('rp-suggest-use-discount').addEventListener('change', function() {
+    document.getElementById('rp-suggest-discount-row').classList.toggle('hidden', !this.checked);
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -912,4 +965,98 @@ function showError(msg) {
   const el = document.getElementById('rp-error');
   el.textContent = msg;
   el.classList.remove('hidden');
+}
+
+// ── Dirty tracking ─────────────────────────────────────────────────────────────
+
+function markDirty() {
+  isDirty = true;
+  updateActiveChip(true);
+}
+
+function markClean() {
+  isDirty = false;
+  updateActiveChip(false);
+}
+
+function updateActiveChip(dirty) {
+  const chip = document.querySelector('#active-building-nav .active-building-chip');
+  if (chip) chip.classList.toggle('dirty', dirty);
+}
+
+function updateSuggestBtn() {
+  const btn = document.getElementById('rp-suggest-btn');
+  if (btn) btn.disabled = measures.length === 0;
+}
+
+// ── Suggest Plan modal ─────────────────────────────────────────────────────────
+
+function openSuggestModal() {
+  const statusEl = document.getElementById('rp-suggest-status');
+  statusEl.textContent = '';
+  statusEl.className = 'rp-suggest-status hidden';
+  document.getElementById('rp-suggest-backdrop').classList.remove('hidden');
+}
+
+function closeSuggestModal() {
+  document.getElementById('rp-suggest-backdrop').classList.add('hidden');
+}
+
+async function runSuggestPlan() {
+  const mode  = document.querySelector('input[name="rp-suggest-mode"]:checked')?.value  || 'minimize_cost';
+  const scope = document.querySelector('input[name="rp-suggest-scope"]:checked')?.value || 'all';
+  const useDiscount  = document.getElementById('rp-suggest-use-discount').checked;
+  const discountRate = parseFloat(document.getElementById('rp-suggest-discount-rate').value) || 5;
+  const statusEl = document.getElementById('rp-suggest-status');
+
+  if (scope === 'all' && isDirty) {
+    if (!confirm('Running "All Measures" will replace your unsaved scenario placements. Continue?')) {
+      return;
+    }
+  }
+
+  statusEl.textContent = 'Computing…';
+  statusEl.className = 'rp-suggest-status';
+
+  try {
+    const resp = await fetch('/api/suggest-plan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        building_save_name: currentBuilding,
+        mode,
+        scope,
+        use_discount:       useDiscount,
+        discount_rate:      discountRate,
+        electricity_kwh:    baselineEnergy?.elec  || 0,
+        natural_gas_therms: baselineEnergy?.gas   || 0,
+        district_steam_mlb: baselineEnergy?.steam || 0,
+        fuel_oil_2_gal:     baselineEnergy?.fo2   || 0,
+        fuel_oil_4_gal:     baselineEnergy?.fo4   || 0,
+        occupancy_groups:   baselineOccupancyGroups || [],
+        current_placements: scope === 'unplaced' ? buildPlacementsPayload() : [],
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Suggest failed');
+
+    const suggested = data.placements || [];
+    if (scope === 'all') placements = {};
+    suggested.forEach(p => {
+      if (!placements[p.year]) placements[p.year] = [];
+      if (!placements[p.year].includes(p.measure_id)) {
+        placements[p.year].push(p.measure_id);
+      }
+    });
+
+    renderAllTimelineYears();
+    renderMeasuresList();
+    updateSummaryTable();
+    markDirty();
+    closeSuggestModal();
+    showToast(`Suggested ${suggested.length} placement(s)`);
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.className = 'rp-suggest-status rp-suggest-error';
+  }
 }

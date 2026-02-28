@@ -952,6 +952,206 @@ def scenario_compute():
     return jsonify({'yearly_data': yearly_data})
 
 
+# ── Suggest Plan ──────────────────────────────────────────────────────────────
+
+@app.route('/api/suggest-plan', methods=['POST'])
+def suggest_plan():
+    data     = request.get_json()
+    building = (data.get('building_save_name') or '').strip()
+    if not building:
+        return jsonify({'error': 'building_save_name required'}), 400
+
+    mode         = data.get('mode', 'minimize_cost')   # 'minimize_cost' | 'minimize_fines'
+    scope        = data.get('scope', 'all')            # 'all' | 'unplaced'
+    use_discount = bool(data.get('use_discount', False))
+    discount_rate = float(data.get('discount_rate') or 5) / 100.0
+
+    energy = {
+        'electricity_kwh':    _safe_float(data.get('electricity_kwh'))    or 0,
+        'natural_gas_therms': _safe_float(data.get('natural_gas_therms')) or 0,
+        'district_steam_mlb': _safe_float(data.get('district_steam_mlb')) or 0,
+        'fuel_oil_2_gal':     _safe_float(data.get('fuel_oil_2_gal'))     or 0,
+        'fuel_oil_4_gal':     _safe_float(data.get('fuel_oil_4_gal'))     or 0,
+    }
+    occupancy_groups = []
+    for og in (data.get('occupancy_groups') or []):
+        pt   = og.get('property_type', '').strip()
+        area = _safe_float(og.get('floor_area'))
+        if pt and area and area > 0:
+            occupancy_groups.append({'property_type': pt, 'floor_area': area})
+    if not occupancy_groups:
+        return jsonify({'error': 'occupancy_groups required'}), 400
+
+    current_placements_raw = data.get('current_placements') or []
+
+    conn = get_saved_db_connection()
+    measure_rows = conn.execute(
+        'SELECT * FROM measures WHERE building_save_name = ? ORDER BY id', (building,)
+    ).fetchall()
+    conn.close()
+
+    all_measures = [dict(m) for m in measure_rows]
+    if not all_measures:
+        return jsonify({'placements': []}), 200
+
+    prices_cfg      = get_energy_prices_config()
+    utility_factors = get_utility_factors(session.get('utility_factors', {}))
+
+    if scope == 'unplaced':
+        placed_ids         = {p.get('measure_id') for p in current_placements_raw if p.get('measure_id')}
+        candidate_measures = [m for m in all_measures if m['id'] not in placed_ids]
+    else:
+        candidate_measures = all_measures
+
+    if not candidate_measures:
+        return jsonify({'placements': []}), 200
+
+    if mode == 'minimize_fines':
+        pre_cumulative = {k: 0 for k in ('electricity_kwh', 'natural_gas_therms',
+                                          'district_steam_mlb', 'fuel_oil_2_gal', 'fuel_oil_4_gal')}
+        if scope == 'unplaced' and current_placements_raw:
+            m_map = {m['id']: m for m in all_measures}
+            for p in current_placements_raw:
+                m = m_map.get(p.get('measure_id'))
+                if m:
+                    pre_cumulative['electricity_kwh']    += m.get('elec_savings')  or 0
+                    pre_cumulative['natural_gas_therms'] += m.get('gas_savings')   or 0
+                    pre_cumulative['district_steam_mlb'] += m.get('steam_savings') or 0
+                    pre_cumulative['fuel_oil_2_gal']     += m.get('oil2_savings')  or 0
+                    pre_cumulative['fuel_oil_4_gal']     += m.get('oil4_savings')  or 0
+        suggested = _suggest_minimize_fines(candidate_measures, energy, occupancy_groups,
+                                            utility_factors, pre_cumulative)
+    else:
+        suggested = _suggest_minimize_cost(candidate_measures, energy, occupancy_groups,
+                                           utility_factors, prices_cfg, use_discount, discount_rate)
+
+    return jsonify({'placements': suggested})
+
+
+def _suggest_minimize_fines(measures, energy, occupancy_groups, utility_factors, pre_cumulative=None):
+    """Period-by-period greedy: select highest-GHG-saving measures per non-compliant period."""
+    PERIOD_FIRST = [('2024_2029', 2024), ('2030_2034', 2030), ('2035_2039', 2035),
+                    ('2040_2049', 2040), ('2050_plus', 2050)]
+    uc = UNIT_CONVERSIONS
+
+    cumulative = dict(pre_cumulative) if pre_cumulative else {
+        k: 0 for k in ('electricity_kwh', 'natural_gas_therms',
+                        'district_steam_mlb', 'fuel_oil_2_gal', 'fuel_oil_4_gal')
+    }
+    placed_ids = set()
+    result     = []
+
+    for period, first_year in PERIOD_FIRST:
+        adj = {
+            'electricity_kwh':    max(0, energy['electricity_kwh']    - cumulative['electricity_kwh']),
+            'natural_gas_therms': max(0, energy['natural_gas_therms'] - cumulative['natural_gas_therms']),
+            'district_steam_mlb': max(0, energy['district_steam_mlb'] - cumulative['district_steam_mlb']),
+            'fuel_oil_2_gal':     max(0, energy['fuel_oil_2_gal']     - cumulative['fuel_oil_2_gal']),
+            'fuel_oil_4_gal':     max(0, energy['fuel_oil_4_gal']     - cumulative['fuel_oil_4_gal']),
+        }
+        emissions = calculate_emissions(adj, utility_factors)[period]['total']
+        limit     = calculate_limit(occupancy_groups, period)
+        if emissions <= limit:
+            continue
+
+        deficit = emissions - limit
+        f = utility_factors[period]
+
+        def _ghg(m, _f=f):
+            return (
+                (m.get('elec_savings')  or 0) * _f['electricity_kwh'] +
+                (m.get('gas_savings')   or 0) * uc['natural_gas_therm_to_kbtu']  * _f['natural_gas_kbtu'] +
+                (m.get('steam_savings') or 0) * uc['district_steam_mlb_to_kbtu'] * _f['district_steam_kbtu'] +
+                (m.get('oil2_savings')  or 0) * uc['fuel_oil_2_gal_to_kbtu']     * _f['fuel_oil_2_kbtu'] +
+                (m.get('oil4_savings')  or 0) * uc['fuel_oil_4_gal_to_kbtu']     * _f['fuel_oil_4_kbtu']
+            )
+
+        candidates = sorted(
+            [(m, _ghg(m)) for m in measures if m['id'] not in placed_ids],
+            key=lambda x: x[1], reverse=True
+        )
+        for m, ghg_sav in candidates:
+            if deficit <= 0:
+                break
+            result.append({'measure_id': m['id'], 'year': first_year})
+            placed_ids.add(m['id'])
+            cumulative['electricity_kwh']    += m.get('elec_savings')  or 0
+            cumulative['natural_gas_therms'] += m.get('gas_savings')   or 0
+            cumulative['district_steam_mlb'] += m.get('steam_savings') or 0
+            cumulative['fuel_oil_2_gal']     += m.get('oil2_savings')  or 0
+            cumulative['fuel_oil_4_gal']     += m.get('oil4_savings')  or 0
+            deficit -= ghg_sav
+
+    return result
+
+
+def _suggest_minimize_cost(measures, energy, occupancy_groups, utility_factors,
+                            prices_cfg, use_discount, discount_rate):
+    """Per-measure: find the latest year where cumulative benefit >= capex."""
+    YEARS = list(range(2024, 2051))
+    uc    = UNIT_CONVERSIONS
+
+    baseline_fines = {}
+    for year in YEARS:
+        period    = _get_period_for_year(year)
+        emissions = calculate_emissions(energy, utility_factors)[period]['total']
+        limit     = calculate_limit(occupancy_groups, period)
+        baseline_fines[year] = calculate_penalty(emissions, limit)
+
+    result = []
+
+    for m in measures:
+        capex = float(m.get('cost') or 0)
+
+        # Free measures: place ASAP — no capital cost to optimise
+        if capex <= 0:
+            result.append({'measure_id': m['id'], 'year': 2024})
+            continue
+
+        ghg_cache = {}
+        def _ghg_period(period, _m=m):
+            if period not in ghg_cache:
+                f = utility_factors[period]
+                ghg_cache[period] = (
+                    (_m.get('elec_savings')  or 0) * f['electricity_kwh'] +
+                    (_m.get('gas_savings')   or 0) * uc['natural_gas_therm_to_kbtu']  * f['natural_gas_kbtu'] +
+                    (_m.get('steam_savings') or 0) * uc['district_steam_mlb_to_kbtu'] * f['district_steam_kbtu'] +
+                    (_m.get('oil2_savings')  or 0) * uc['fuel_oil_2_gal_to_kbtu']     * f['fuel_oil_2_kbtu'] +
+                    (_m.get('oil4_savings')  or 0) * uc['fuel_oil_4_gal_to_kbtu']     * f['fuel_oil_4_kbtu']
+                )
+            return ghg_cache[period]
+
+        def _annual_benefit(year, _m=m):
+            period = _get_period_for_year(year)
+            yp = {k: get_escalated_price(v['price'], v['escalator'], year) for k, v in prices_cfg.items()}
+            e_sav = (
+                (_m.get('elec_savings')  or 0) * yp.get('electricity_kwh', 0) +
+                (_m.get('gas_savings')   or 0) * yp.get('natural_gas_therm', 0) +
+                (_m.get('steam_savings') or 0) * yp.get('district_steam_mlb', 0) +
+                (_m.get('oil2_savings')  or 0) * yp.get('fuel_oil_2_gal', 0) +
+                (_m.get('oil4_savings')  or 0) * yp.get('fuel_oil_4_gal', 0)
+            )
+            fine_sav = min(_ghg_period(period) * PENALTY_RATE, baseline_fines.get(year, 0))
+            return e_sav + fine_sav
+
+        # Iterate 2050→2024; first match when iterating backward = latest breakeven year
+        best_year = None
+        for yr in reversed(YEARS):
+            total = sum(
+                _annual_benefit(t) / ((1 + discount_rate) ** (t - yr))
+                if (use_discount and discount_rate > 0) else _annual_benefit(t)
+                for t in range(yr, 2051)
+            )
+            if total >= capex:
+                best_year = yr
+                break
+
+        if best_year is not None:
+            result.append({'measure_id': m['id'], 'year': best_year})
+
+    return result
+
+
 # ── Measures upload & template ───────────────────────────────────────────────
 
 @app.route('/api/upload-measures', methods=['POST'])
