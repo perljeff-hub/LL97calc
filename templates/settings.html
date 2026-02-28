@@ -22,6 +22,10 @@
       </div>
     </div>
     <nav class="header-nav">
+      <a href="/saved-buildings" class="nav-link">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem"><rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/><path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Saved Buildings
+      </a>
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
@@ -42,6 +46,40 @@
 
 <main class="main-container">
 
+  <!-- ── ENERGY PRICES ────────────────────────────────────────────────────── -->
+  <section class="card">
+    <h2 class="card-title">Energy Prices &amp; Annual Escalators</h2>
+    <p class="card-desc">
+      Set the base energy prices (in the first year, 2024) and an annual price escalator for each fuel.
+      Each year's price compounds from the prior year: e.g., at 3%, the 2025 price is the 2024 price × 1.03.
+      These prices are used for the financial summary on the Timeline tab.
+    </p>
+  </section>
+
+  <section class="card wide-card">
+    <div class="settings-table-wrapper">
+      <table class="settings-table" id="prices-table">
+        <thead>
+          <tr>
+            <th>Fuel / Energy</th>
+            <th>Unit</th>
+            <th>Base Price (2024)</th>
+            <th>Annual Escalator (%)</th>
+          </tr>
+        </thead>
+        <tbody id="prices-tbody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn-primary" id="prices-save-btn">Save Prices</button>
+      <button class="btn btn-ghost" id="prices-reset-btn">Reset to Defaults</button>
+      <span id="prices-save-status" class="save-status"></span>
+    </div>
+  </section>
+
+  <!-- ── GHG FACTORS ───────────────────────────────────────────────────────── -->
   <section class="card">
     <h2 class="card-title">GHG Emission Factor Settings</h2>
     <p class="card-desc">
@@ -182,6 +220,89 @@
 const MODIFIABLE_PERIODS = {{ modifiable_periods | tojson }};
 const DEFAULT_FACTORS = {{ default_factors | tojson }};
 
+// ── Energy Prices ─────────────────────────────────────────────────────────────
+const PRICE_META = [
+  { key: 'electricity_kwh',    label: 'Electricity',    unit: '$/kWh'   },
+  { key: 'natural_gas_therm',  label: 'Natural Gas',    unit: '$/therm' },
+  { key: 'district_steam_mlb', label: 'District Steam', unit: '$/mLb'   },
+  { key: 'fuel_oil_2_gal',     label: '#2 Fuel Oil',    unit: '$/gal'   },
+  { key: 'fuel_oil_4_gal',     label: '#4 Fuel Oil',    unit: '$/gal'   },
+];
+
+let pricesDefaults = {};
+
+async function loadPrices() {
+  const resp = await fetch('/api/settings/prices');
+  const data = await resp.json();
+  pricesDefaults = data.defaults || {};
+  const prices   = data.prices  || {};
+  const tbody    = document.getElementById('prices-tbody');
+  tbody.innerHTML = '';
+  PRICE_META.forEach(m => {
+    const cur = prices[m.key] || pricesDefaults[m.key] || {};
+    const def = pricesDefaults[m.key] || {};
+    const tr  = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="factor-name">${m.label}</td>
+      <td class="factor-unit">${m.unit}</td>
+      <td>
+        <div class="factor-cell">
+          <input type="number" class="factor-input price-input" id="price-${m.key}"
+            step="0.01" min="0" value="${cur.price ?? def.price}"
+            data-default="${def.price}" />
+          <div class="factor-default">Default: ${def.price}</div>
+        </div>
+      </td>
+      <td>
+        <div class="factor-cell">
+          <input type="number" class="factor-input esc-input" id="esc-${m.key}"
+            step="0.1" min="0" value="${cur.escalator ?? def.escalator}"
+            data-default="${def.escalator}" />
+          <div class="factor-default">Default: ${def.escalator}%</div>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  // Highlight modified cells
+  document.querySelectorAll('#prices-tbody .factor-input').forEach(input => {
+    const def = parseFloat(input.dataset.default);
+    const check = () => input.classList.toggle('modified', Math.abs(parseFloat(input.value) - def) > 0.0001);
+    input.addEventListener('input', check);
+    check();
+  });
+}
+loadPrices();
+
+document.getElementById('prices-save-btn').addEventListener('click', async () => {
+  const payload = {};
+  PRICE_META.forEach(m => {
+    payload[m.key] = {
+      price:     parseFloat(document.getElementById('price-' + m.key).value) || 0,
+      escalator: parseFloat(document.getElementById('esc-' + m.key).value)   || 0,
+    };
+  });
+  const resp = await fetch('/api/settings/prices', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  const status = document.getElementById('prices-save-status');
+  status.textContent = data.status === 'saved' ? '✓ Prices saved' : '✗ Error saving';
+  status.className = 'save-status ' + (data.status === 'saved' ? 'saved' : 'error');
+  setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
+});
+
+document.getElementById('prices-reset-btn').addEventListener('click', async () => {
+  if (!confirm('Reset energy prices to defaults?')) return;
+  await fetch('/api/settings/prices/reset', { method: 'POST' });
+  loadPrices();
+  const status = document.getElementById('prices-save-status');
+  status.textContent = '✓ Reset to defaults';
+  status.className = 'save-status saved';
+  setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
+});
+
+
 document.getElementById('save-btn').addEventListener('click', async () => {
   const payload = {};
   MODIFIABLE_PERIODS.forEach(period => {
@@ -233,8 +354,13 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
       document.getElementById('active-building-nav').innerHTML =
         `<span class="active-building-chip">`+
         `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
-        `<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
-        `<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
+        `<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>`+
+        `<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>`+
+        `<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>`+
+        `<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>`+
+        `<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>`+
+        `<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>`+
+        `<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`+
         `</svg>`+
         `<span>${a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`+
         `</span>`;

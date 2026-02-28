@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saved Buildings — NYC LL97 Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#1a5276"/>
+        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="header-title">NYC LL97 Calculator</div>
+        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/saved-buildings" class="nav-link active">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem">
+          <rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>
+          <rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>
+          <rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>
+          <rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>
+          <rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>
+          <path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        Saved Buildings
+      </a>
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/" class="nav-link">Calculate</a>
+      <div class="nav-dropdown" id="manage-nav-dropdown">
+        <a href="/manage" class="nav-link nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <section class="card wide-card">
+    <h2 class="card-title">Saved Buildings</h2>
+    <p class="card-desc">Click a building to open its Compliance Timeline.</p>
+
+    <div id="sb-loading" class="manage-status-card">
+      <p class="manage-status-text">Loading…</p>
+    </div>
+    <div id="sb-empty" class="manage-status-card hidden">
+      <p class="manage-status-text">No saved buildings yet. <a href="/">Calculate and save a building</a> to see it here.</p>
+    </div>
+    <div id="sb-error" class="error-msg hidden" style="margin:0"></div>
+
+    <div class="sb-table-wrap hidden" id="sb-table-wrap">
+      <table class="settings-table sb-table" id="sb-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Property</th>
+            <th>Address</th>
+            <th>Borough</th>
+            <th>Gross Floor Area</th>
+            <th>Saved</th>
+          </tr>
+        </thead>
+        <tbody id="sb-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<script>
+(function() {
+  // Active building chip
+  try {
+    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    if (a && a.saveName) {
+      const esc = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      document.getElementById('active-building-nav').innerHTML =
+        '<span class="active-building-chip">' +
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
+        '<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>' +
+        '<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
+        '<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+        '</svg><span>' + esc + '</span></span>';
+    }
+  } catch(e) {}
+
+  // Nav dropdown hover delay
+  (function() {
+    var dd = document.getElementById('manage-nav-dropdown');
+    var menu = document.getElementById('manage-nav-menu');
+    if (!dd || !menu) return;
+    var timer = null;
+    dd.addEventListener('mouseenter', function() {
+      if (dd.classList.contains('disabled')) return;
+      if (timer) { clearTimeout(timer); timer = null; }
+      menu.classList.add('open');
+      dd.classList.add('open');
+    });
+    dd.addEventListener('mouseleave', function() {
+      timer = setTimeout(function() {
+        menu.classList.remove('open');
+        dd.classList.remove('open');
+      }, 3000);
+    });
+  })();
+
+  // Load buildings
+  async function loadBuildings() {
+    try {
+      const resp = await fetch('/api/saved-buildings');
+      const data = await resp.json();
+      document.getElementById('sb-loading').classList.add('hidden');
+      const buildings = data.buildings || [];
+      if (!buildings.length) {
+        document.getElementById('sb-empty').classList.remove('hidden');
+        return;
+      }
+      document.getElementById('sb-table-wrap').classList.remove('hidden');
+      const tbody = document.getElementById('sb-tbody');
+      buildings.forEach(b => {
+        const tr = document.createElement('tr');
+        tr.className = 'sb-row';
+        tr.title = 'Open ' + b.save_name + ' in Compliance Timeline';
+        const gfa = b.gross_floor_area ? Number(b.gross_floor_area).toLocaleString('en-US') + ' sf' : '—';
+        const saved = b.saved_at ? b.saved_at.slice(0, 10) : '—';
+        tr.innerHTML =
+          '<td class="sb-name">' + esc(b.save_name) + '</td>' +
+          '<td>' + esc(b.property_name || '—') + '</td>' +
+          '<td>' + esc(b.address || '—') + '</td>' +
+          '<td>' + esc(b.borough || '—') + '</td>' +
+          '<td class="mono">' + gfa + '</td>' +
+          '<td class="mono">' + saved + '</td>';
+        tr.addEventListener('click', () => openBuilding(b.save_name));
+        tbody.appendChild(tr);
+      });
+    } catch(e) {
+      document.getElementById('sb-loading').classList.add('hidden');
+      const err = document.getElementById('sb-error');
+      err.textContent = 'Failed to load buildings: ' + e.message;
+      err.classList.remove('hidden');
+    }
+  }
+
+  async function openBuilding(saveName) {
+    try {
+      const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(saveName));
+      if (!resp.ok) throw new Error('Building not found');
+      const data = await resp.json();
+      const b = data.building;
+      // Build the ll97_calc_state that manage.js expects
+      const occ = (b.occupancy_groups || []).map(g => ({type: g.property_type, area: String(g.floor_area)}));
+      const state = {
+        saveName:    b.save_name,
+        buildingData: null,
+        isDirty:     false,
+        form: {
+          elec:  String(b.electricity_kwh    || ''),
+          gas:   String(b.natural_gas_therms  || ''),
+          steam: String(b.district_steam_mlb  || ''),
+          fo2:   String(b.fuel_oil_2_gal      || ''),
+          fo4:   String(b.fuel_oil_4_gal      || ''),
+        },
+        occRows: occ,
+        resultsVisible: false,
+      };
+      sessionStorage.setItem('ll97_calc_state', JSON.stringify(state));
+      sessionStorage.setItem('ll97_active', JSON.stringify({saveName: b.save_name}));
+      window.location.href = '/manage';
+    } catch(e) {
+      alert('Could not load building: ' + e.message);
+    }
+  }
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  loadBuildings();
+})();
+</script>
+</body>
+</html>

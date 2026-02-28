@@ -13,23 +13,36 @@ const PERIOD_YEAR_MAP = [
   { period: '2050_plus', years: [2050] },
 ];
 
-// Default utility prices — must match /api/calculate defaults for consistency
-const DEFAULT_PRICES = {
-  electricity:    { label: 'Electricity', unit: '$/kWh',  val: 0.15 },
-  natural_gas:    { label: 'Nat. Gas',    unit: '$/therm',val: 1.50 },
-  district_steam: { label: 'Steam',       unit: '$/mLb',  val: 18.00 },
-  fuel_oil_2:     { label: 'Oil #2',      unit: '$/gal',  val: 3.00 },
-  fuel_oil_4:     { label: 'Oil #4',      unit: '$/gal',  val: 2.90 },
-};
-const FUEL_KEYS = Object.keys(DEFAULT_PRICES);
+// Fuel key order for table columns (matches backend calculate_utility_costs keys)
+const FUEL_KEYS = ['electricity', 'natural_gas', 'district_steam', 'fuel_oil_2', 'fuel_oil_4'];
 
-let manageChart      = null;
-let baseUtilityCosts = null;  // from /api/calculate utility_costs
-let cachedYears      = [];
-let cachedBaseFines  = [];
-let cachedScenData   = null;
-let cachedScenName   = '';
-let showFuelDetail   = false;
+// Fuel key → backend prices_config key mapping
+const FUEL_TO_PRICE_KEY = {
+  electricity:    'electricity_kwh',
+  natural_gas:    'natural_gas_therm',
+  district_steam: 'district_steam_mlb',
+  fuel_oil_2:     'fuel_oil_2_gal',
+  fuel_oil_4:     'fuel_oil_4_gal',
+};
+
+// Fuel key → energy input key mapping
+const FUEL_TO_ENERGY_KEY = {
+  electricity:    'electricity_kwh',
+  natural_gas:    'natural_gas_therms',
+  district_steam: 'district_steam_mlb',
+  fuel_oil_2:     'fuel_oil_2_gal',
+  fuel_oil_4:     'fuel_oil_4_gal',
+};
+
+let manageChart          = null;
+let pricesConfig         = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
+let baseEnergyQty        = null;  // raw energy quantities from state
+let baseUtilityCostsByYr = [];    // per-year baseline costs (length 27)
+let cachedYears          = [];
+let cachedBaseFines      = [];
+let cachedScenData       = null;
+let cachedScenName       = '';
+let showFuelDetail       = false;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 
@@ -51,23 +64,33 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  let calcData;
+  // Fetch prices/escalators and run calculate in parallel
+  let calcData, pricesResp;
   try {
-    const resp = await fetch('/api/calculate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    calcData = await resp.json();
-    if (!resp.ok || calcData.error) {
-      showError(calcData.error || 'Calculation failed.');
-      return;
-    }
+    [calcData, pricesResp] = await Promise.all([
+      fetch('/api/calculate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(r => r.json()),
+      fetch('/api/settings/prices').then(r => r.json()),
+    ]);
+    if (calcData.error) { showError(calcData.error); return; }
   } catch (e) {
     showError('Could not reach the server. Please try again.');
     return;
   }
 
-  baseUtilityCosts = calcData.utility_costs;
+  pricesConfig  = pricesResp.prices;  // {electricity_kwh: {price, escalator}, ...}
+  baseEnergyQty = {
+    electricity_kwh:    parseFloat(state.form?.elec)  || 0,
+    natural_gas_therms: parseFloat(state.form?.gas)   || 0,
+    district_steam_mlb: parseFloat(state.form?.steam) || 0,
+    fuel_oil_2_gal:     parseFloat(state.form?.fo2)   || 0,
+    fuel_oil_4_gal:     parseFloat(state.form?.fo4)   || 0,
+  };
+  // Compute per-year baseline costs using escalating prices
+  baseUtilityCostsByYr = computeBaselineCostsByYear();
+
   buildChart(state.saveName, calcData.results);
   buildFinancialTable();
   loadScenarios(state.saveName, calcData.results, state);
@@ -140,6 +163,38 @@ function buildCalcPayload(state) {
       .map(r => ({ property_type: r.type, floor_area: parseFloat(r.area) || 0 }))
       .filter(g => g.property_type && g.floor_area > 0),
   };
+}
+
+/**
+ * Compute per-year baseline utility costs for all 27 years (2024-2050),
+ * applying the annual price escalator to each fuel.
+ */
+function computeBaselineCostsByYear() {
+  const YEARS = Array.from({length: 27}, (_, i) => 2024 + i);
+  return YEARS.map(year => {
+    let total = 0;
+    const fuels = {};
+    FUEL_KEYS.forEach(fk => {
+      const priceKey = FUEL_TO_PRICE_KEY[fk];
+      const energyKey = FUEL_TO_ENERGY_KEY[fk];
+      const cfg = pricesConfig[priceKey] || {price: 0, escalator: 0};
+      const escalatedPrice = cfg.price * Math.pow(1 + cfg.escalator / 100, year - 2024);
+      const qty = baseEnergyQty[energyKey] || 0;
+      const cost = qty * escalatedPrice;
+      fuels[fk] = Math.round(cost);
+      total += cost;
+    });
+    fuels.total = Math.round(total);
+    return fuels;
+  });
+}
+
+function getFuelLabel(fk) {
+  const map = {
+    electricity: 'Electricity', natural_gas: 'Nat. Gas',
+    district_steam: 'Steam', fuel_oil_2: 'Oil #2', fuel_oil_4: 'Oil #4',
+  };
+  return map[fk] || fk;
 }
 
 function $d(v) { return '$' + Math.round(v).toLocaleString('en-US'); }
@@ -303,7 +358,7 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
 
 function buildFinancialTable() {
   const container = document.getElementById('manage-fin-container');
-  if (!container || !baseUtilityCosts || !cachedYears.length) return;
+  if (!container || !baseUtilityCostsByYr.length || !cachedYears.length) return;
   container.innerHTML = '';
   container.classList.remove('hidden');
 
@@ -385,7 +440,7 @@ function buildFinTable(hasScen) {
     cr.appendChild(th);
   }
   if (showFuelDetail) {
-    FUEL_KEYS.forEach(k => colTh(DEFAULT_PRICES[k].label, 'fin-fuel-col fin-base-col'));
+    FUEL_KEYS.forEach(k => colTh(getFuelLabel(k), 'fin-fuel-col fin-base-col'));
     colTh('Total Energy', 'fin-base-col fin-tot-col');
   } else {
     colTh('Energy Cost', 'fin-base-col fin-tot-col');
@@ -395,7 +450,7 @@ function buildFinTable(hasScen) {
 
   if (hasScen) {
     if (showFuelDetail) {
-      FUEL_KEYS.forEach(k => colTh(DEFAULT_PRICES[k].label, 'fin-fuel-col fin-scen-col'));
+      FUEL_KEYS.forEach(k => colTh(getFuelLabel(k), 'fin-fuel-col fin-scen-col'));
       colTh('Total Energy', 'fin-scen-col fin-tot-col');
     } else {
       colTh('Energy Cost', 'fin-scen-col fin-tot-col');
@@ -417,9 +472,10 @@ function buildFinTable(hasScen) {
   };
 
   cachedYears.forEach((yr, i) => {
-    const bFine  = cachedBaseFines[i] || 0;
-    const bTotal = baseUtilityCosts.total || 0;
-    const sd     = hasScen ? cachedScenData[i] : null;
+    const bFine     = cachedBaseFines[i] || 0;
+    const bYrCosts  = baseUtilityCostsByYr[i] || {};
+    const bTotal    = bYrCosts.total || 0;
+    const sd        = hasScen ? cachedScenData[i] : null;
 
     const tr = document.createElement('tr');
     function td(html, cls, isNeg) {
@@ -431,10 +487,10 @@ function buildFinTable(hasScen) {
 
     td(yr, 'fin-year-td');
 
-    // Baseline energy
+    // Baseline energy (escalated per-year costs)
     if (showFuelDetail) {
       FUEL_KEYS.forEach(k => {
-        const v = baseUtilityCosts[k] || 0;
+        const v = bYrCosts[k] || 0;
         tot.baseFuels[k] += v;
         td($f(v), 'fin-base-col fin-fuel-col');
       });

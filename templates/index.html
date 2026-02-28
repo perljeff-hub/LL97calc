@@ -23,6 +23,10 @@
       </div>
     </div>
     <nav class="header-nav">
+      <a href="/saved-buildings" class="nav-link">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem"><rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/><path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Saved Buildings
+      </a>
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link active">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
@@ -90,30 +94,15 @@
       </div>
     </section>
 
-    <!-- ── ENERGY PRICES ────────────────────────────────────────────────── -->
+    <!-- ── ENERGY PRICES (read-only) ───────────────────────────────────────── -->
     <section class="card" id="prices-section">
-      <h2 class="card-title">Energy Prices <span class="badge badge-opt">Optional</span></h2>
-      <p class="card-desc">Used for utility cost analysis. Defaults shown are NYC averages.</p>
-
-      <div class="input-group">
-        <label class="input-label" for="p-elec">Electricity <span class="unit">($/kWh)</span></label>
-        <input type="number" id="p-elec" class="form-input" min="0" step="0.001" value="0.150" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="p-gas">Natural Gas <span class="unit">($/therm)</span></label>
-        <input type="number" id="p-gas" class="form-input" min="0" step="0.01" value="1.50" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="p-steam">District Steam <span class="unit">($/Mlb)</span></label>
-        <input type="number" id="p-steam" class="form-input" min="0" step="0.01" value="18.00" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="p-fo2">#2 Fuel Oil <span class="unit">($/gallon)</span></label>
-        <input type="number" id="p-fo2" class="form-input" min="0" step="0.01" value="3.00" />
-      </div>
-      <div class="input-group">
-        <label class="input-label" for="p-fo4">#4 Fuel Oil <span class="unit">($/gallon)</span></label>
-        <input type="number" id="p-fo4" class="form-input" min="0" step="0.01" value="2.90" />
+      <h2 class="card-title">Energy Prices</h2>
+      <p class="card-desc">
+        Used for utility cost analysis on the Timeline tab.
+        To edit energy prices, go to <a href="/settings">Settings</a>.
+      </p>
+      <div id="prices-display" class="prices-display">
+        <!-- Populated by JS from /api/settings/prices -->
       </div>
     </section>
 
@@ -210,6 +199,30 @@ window.COMPLIANCE_PERIODS   = {{ compliance_periods | tojson }};
 window.PERIOD_LABELS         = {{ period_labels | tojson }};
 </script>
 <script>
+// Load and display current energy prices (read-only)
+(function() {
+  fetch('/api/settings/prices').then(r => r.json()).then(data => {
+    const prices = data.prices || {};
+    const meta = [
+      {key:'electricity_kwh',    label:'Electricity',    unit:'$/kWh'},
+      {key:'natural_gas_therm',  label:'Natural Gas',    unit:'$/therm'},
+      {key:'district_steam_mlb', label:'District Steam', unit:'$/mLb'},
+      {key:'fuel_oil_2_gal',     label:'#2 Fuel Oil',    unit:'$/gal'},
+      {key:'fuel_oil_4_gal',     label:'#4 Fuel Oil',    unit:'$/gal'},
+    ];
+    const el = document.getElementById('prices-display');
+    if (!el) return;
+    el.innerHTML = meta.map(m => {
+      const p = prices[m.key] || {};
+      return `<div class="price-ro-row">
+        <span class="price-ro-label">${m.label}</span>
+        <span class="price-ro-val">${p.price ?? '—'} <span class="unit">${m.unit}</span></span>
+        <span class="price-ro-esc">+${p.escalator ?? 3}%/yr</span>
+      </div>`;
+    }).join('');
+  }).catch(() => {});
+})();
+
 // Nav dropdown — show on hover, close after 3 s of mouse-out
 (function() {
   var dd = document.getElementById('manage-nav-dropdown');
