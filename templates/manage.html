@@ -23,6 +23,10 @@
       </div>
     </div>
     <nav class="header-nav">
+      <a href="/saved-buildings" class="nav-link">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-.15em;margin-right:.25rem"><rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/><path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Saved Buildings
+      </a>
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — active because we're on /manage -->
@@ -116,8 +120,13 @@
       document.getElementById('active-building-nav').innerHTML =
         '<span class="active-building-chip">' +
         '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
-        '<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
-        '<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
+        '<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>' +
+        '<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
+        '<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
         '</svg><span>' + esc + '</span></span>';
     }
   } catch(e) {}

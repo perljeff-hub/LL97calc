@@ -122,6 +122,33 @@ def normalize_espm_type(raw):
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Default energy prices and annual escalators (% per year, compounding)
+DEFAULT_ENERGY_PRICES = {
+    'electricity_kwh':    {'label': 'Electricity',      'unit': '$/kWh',   'price': 0.15,  'escalator': 3.0},
+    'natural_gas_therm':  {'label': 'Natural Gas',      'unit': '$/therm', 'price': 1.50,  'escalator': 3.0},
+    'district_steam_mlb': {'label': 'District Steam',   'unit': '$/mLb',   'price': 18.00, 'escalator': 3.0},
+    'fuel_oil_2_gal':     {'label': '#2 Fuel Oil',      'unit': '$/gal',   'price': 3.00,  'escalator': 3.0},
+    'fuel_oil_4_gal':     {'label': '#4 Fuel Oil',      'unit': '$/gal',   'price': 2.90,  'escalator': 3.0},
+}
+
+
+def get_energy_prices_config():
+    """Return current energy prices + escalators, merging session overrides."""
+    user = session.get('energy_prices', {})
+    result = {}
+    for fuel, defaults in DEFAULT_ENERGY_PRICES.items():
+        result[fuel] = {
+            'price':     float(user.get(fuel, {}).get('price',     defaults['price'])),
+            'escalator': float(user.get(fuel, {}).get('escalator', defaults['escalator'])),
+        }
+    return result
+
+
+def get_escalated_price(base_price, escalator_pct, year):
+    """Price in given year = base * (1 + pct/100)^(year - 2024)."""
+    return base_price * ((1 + escalator_pct / 100.0) ** (year - 2024))
+
+
 def get_utility_factors(session_settings=None):
     """Return utility factors, merging any user overrides from session."""
     import copy
@@ -275,6 +302,71 @@ def get_settings():
         'defaults': DEFAULT_UTILITY_FACTORS,
         'user_overrides': user_factors,
     })
+
+
+@app.route('/api/settings/prices', methods=['GET'])
+def get_price_settings():
+    return jsonify({
+        'prices': get_energy_prices_config(),
+        'defaults': {k: {'price': v['price'], 'escalator': v['escalator']}
+                     for k, v in DEFAULT_ENERGY_PRICES.items()},
+    })
+
+
+@app.route('/api/settings/prices', methods=['POST'])
+def save_price_settings():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+    session['energy_prices'] = data
+    return jsonify({'status': 'saved'})
+
+
+@app.route('/api/settings/prices/reset', methods=['POST'])
+def reset_price_settings():
+    session.pop('energy_prices', None)
+    return jsonify({'status': 'reset'})
+
+
+# ---------------------------------------------------------------------------
+# Saved Buildings list/detail endpoints
+# ---------------------------------------------------------------------------
+
+@app.route('/saved-buildings')
+def saved_buildings_page():
+    return render_template('saved_buildings.html')
+
+
+@app.route('/api/saved-buildings')
+def list_saved_buildings():
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'buildings': []})
+    conn = get_saved_db_connection()
+    rows = conn.execute(
+        'SELECT save_name, property_name, address, borough, postcode, '
+        'gross_floor_area, saved_at FROM saved_buildings ORDER BY saved_at DESC'
+    ).fetchall()
+    conn.close()
+    return jsonify({'buildings': [dict(r) for r in rows]})
+
+
+@app.route('/api/saved-buildings/<path:name>')
+def get_saved_building(name):
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    conn = get_saved_db_connection()
+    row = conn.execute(
+        'SELECT * FROM saved_buildings WHERE save_name = ?', (name,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    d = dict(row)
+    try:
+        d['occupancy_groups'] = json.loads(d.get('occupancy_groups') or '[]')
+    except Exception:
+        d['occupancy_groups'] = []
+    return jsonify({'building': d})
 
 
 @app.route('/api/search')
@@ -526,14 +618,9 @@ def calculate():
 
     total_floor_area = sum(og['floor_area'] for og in occupancy_groups)
 
-    # Energy prices for cost analysis
-    prices = {
-        'electricity_kwh':     _safe_float(data.get('price_electricity')) or 0.15,
-        'natural_gas_therm':   _safe_float(data.get('price_natural_gas')) or 1.50,
-        'district_steam_mlb':  _safe_float(data.get('price_district_steam')) or 18.00,
-        'fuel_oil_2_gal':      _safe_float(data.get('price_fuel_oil_2')) or 3.00,
-        'fuel_oil_4_gal':      _safe_float(data.get('price_fuel_oil_4')) or 2.90,
-    }
+    # Energy prices for cost analysis — use session settings (base year 2024 prices)
+    prices_cfg = get_energy_prices_config()
+    prices = {k: v['price'] for k, v in prices_cfg.items()}
 
     # Get utility factors (with user overrides from session)
     user_overrides = session.get('utility_factors', {})
@@ -802,14 +889,7 @@ def scenario_compute():
     if not occupancy_groups:
         return jsonify({'error': 'occupancy_groups required'}), 400
 
-    # Default energy prices — consistent with /api/calculate defaults
-    PRICES = {
-        'electricity_kwh':    0.15,
-        'natural_gas_therm':  1.50,
-        'district_steam_mlb': 18.00,
-        'fuel_oil_2_gal':     3.00,
-        'fuel_oil_4_gal':     2.90,
-    }
+    prices_cfg = get_energy_prices_config()  # year-0 (2024) prices + escalators
 
     conn = get_saved_db_connection()
     placements = conn.execute('''
@@ -857,7 +937,9 @@ def scenario_compute():
         emissions    = calculate_emissions(adj, utility_factors)[period]['total']
         limit        = calculate_limit(occupancy_groups, period)
         fine         = calculate_penalty(emissions, limit)
-        energy_costs = calculate_utility_costs(adj, PRICES)
+        year_prices  = {k: get_escalated_price(v['price'], v['escalator'], year)
+                        for k, v in prices_cfg.items()}
+        energy_costs = calculate_utility_costs(adj, year_prices)
         yearly_data.append({
             'year':         year,
             'emissions':    round(emissions, 4),
