@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ll97-calculator
+    env: python
+    # Download LL84 building data (~26k buildings from NYC Open Data) at build time
+    buildCommand: pip install -r requirements.txt && python app.py --init-db
+    startCommand: bash run.sh --prod
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.0
