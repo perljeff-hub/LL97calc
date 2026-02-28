@@ -11,6 +11,15 @@
 const SESSION_KEY  = 'll97_calc_state';
 const YEARS        = Array.from({length: 27}, (_, i) => 2024 + i); // 2024-2050
 
+// Fuel keys → {label, unit, sessionKey}
+const FUEL_META = {
+  elec_savings:  {label: 'Electricity',  unit: 'kWh',    baseKey: 'elec'},
+  gas_savings:   {label: 'Natural Gas',  unit: 'therms', baseKey: 'gas'},
+  steam_savings: {label: 'Steam',        unit: 'mLbs',   baseKey: 'steam'},
+  oil2_savings:  {label: 'Oil #2',       unit: 'gal',    baseKey: 'fo2'},
+  oil4_savings:  {label: 'Oil #4',       unit: 'gal',    baseKey: 'fo4'},
+};
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 let currentBuilding   = '';
@@ -19,6 +28,14 @@ let scenarios         = [];   // [{id, name, number}]
 let currentScenarioId = null;
 // placements: year (number) → [measureId, ...]
 let placements        = {};
+// Baseline energy usage from sessionStorage (may be null if not loaded)
+let baselineEnergy    = null; // {elec, gas, steam, fo2, fo4} — all numbers
+
+// Warning modal promise resolver
+let _warnResolve = null;
+
+// Track which measure card is currently being edited (id or null)
+let editingMeasureId  = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +46,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const state = JSON.parse(raw);
     if (!state.saveName) { showNoBuilding(); return; }
     currentBuilding = state.saveName;
+
+    // Load baseline energy usage for savings validation
+    if (state.form) {
+      baselineEnergy = {
+        elec:  parseFloat(state.form.elec)  || 0,
+        gas:   parseFloat(state.form.gas)   || 0,
+        steam: parseFloat(state.form.steam) || 0,
+        fo2:   parseFloat(state.form.fo2)   || 0,
+        fo4:   parseFloat(state.form.fo4)   || 0,
+      };
+    }
   } catch (e) {
     showNoBuilding();
     return;
@@ -143,7 +171,7 @@ function renderMeasuresList() {
   const list    = document.getElementById('rp-measures-list');
   const empty   = document.getElementById('rp-measures-empty');
   // Remove old measure cards (preserve empty hint)
-  list.querySelectorAll('.rp-measure-card').forEach(el => el.remove());
+  list.querySelectorAll('.rp-measure-card, .rp-edit-form').forEach(el => el.remove());
 
   if (!measures.length) {
     empty.classList.remove('hidden');
@@ -153,8 +181,27 @@ function renderMeasuresList() {
 
   const placed = getPlacedIds();
   measures.forEach(m => {
-    list.appendChild(makeMeasureCard(m, placed.has(m.id)));
+    if (editingMeasureId === m.id) {
+      list.appendChild(makeEditForm(m));
+    } else {
+      list.appendChild(makeMeasureCard(m, placed.has(m.id)));
+    }
   });
+}
+
+// ── Warning flags ─────────────────────────────────────────────────────────────
+
+function getExceededFuels(m) {
+  if (!baselineEnergy) return [];
+  const exceeded = [];
+  Object.entries(FUEL_META).forEach(([key, meta]) => {
+    const savings = parseFloat(m[key]) || 0;
+    const baseline = baselineEnergy[meta.baseKey] || 0;
+    if (savings > 0 && baseline > 0 && savings > baseline) {
+      exceeded.push({label: meta.label, unit: meta.unit, savings, baseline});
+    }
+  });
+  return exceeded;
 }
 
 function makeMeasureCard(m, isPlaced) {
@@ -163,12 +210,28 @@ function makeMeasureCard(m, isPlaced) {
   card.dataset.id = m.id;
   card.draggable  = !isPlaced;
 
+  const exceeded = getExceededFuels(m);
+
   const info      = document.createElement('div');
   info.className  = 'rp-measure-info';
 
-  const name      = document.createElement('div');
+  const nameRow   = document.createElement('div');
+  nameRow.className = 'rp-measure-name-row';
+
+  const name      = document.createElement('span');
   name.className  = 'rp-measure-name';
   name.textContent = m.name;
+  nameRow.appendChild(name);
+
+  // Warning flag badge if savings exceed baseline
+  if (exceeded.length) {
+    const flag    = document.createElement('span');
+    flag.className = 'rp-measure-warn-flag';
+    flag.title    = 'Savings exceed baseline usage for: ' +
+                    exceeded.map(f => f.label).join(', ');
+    flag.textContent = '\u26a0 Exceeds Baseline';
+    nameRow.appendChild(flag);
+  }
 
   const meta      = document.createElement('div');
   meta.className  = 'rp-measure-meta';
@@ -181,7 +244,15 @@ function makeMeasureCard(m, isPlaced) {
   if (m.oil4_savings)  parts.push(fmtNum(m.oil4_savings) + ' gal #4');
   meta.textContent = parts.join(' · ') || 'No savings entered';
 
-  info.appendChild(name);
+  info.appendChild(nameRow);
+  if (exceeded.length) {
+    const note  = document.createElement('div');
+    note.className = 'rp-measure-warn-note';
+    note.textContent = 'Note: ' + exceeded.map(f =>
+      `${f.label} savings (${fmtNum(f.savings)} ${f.unit}) exceed baseline usage (${fmtNum(f.baseline)} ${f.unit})`
+    ).join('; ');
+    info.appendChild(note);
+  }
   info.appendChild(meta);
   card.appendChild(info);
 
@@ -192,6 +263,12 @@ function makeMeasureCard(m, isPlaced) {
   del.innerHTML  = '&times;';
   del.addEventListener('click', e => { e.stopPropagation(); deleteMeasure(m.id); });
   card.appendChild(del);
+
+  // Click card body (not delete) → open inline edit
+  info.addEventListener('click', () => {
+    editingMeasureId = m.id;
+    renderMeasuresList();
+  });
 
   if (!isPlaced) {
     card.addEventListener('dragstart', e => {
@@ -205,6 +282,175 @@ function makeMeasureCard(m, isPlaced) {
 
   return card;
 }
+
+// ── Inline edit form ──────────────────────────────────────────────────────────
+
+function makeEditForm(m) {
+  const wrap = document.createElement('div');
+  wrap.className = 'rp-edit-form';
+  wrap.dataset.id = m.id;
+
+  wrap.innerHTML = `
+    <div class="rp-edit-title">Edit Measure</div>
+    <div class="rp-edit-grid">
+      <div class="input-group rp-edit-full">
+        <label class="input-label">Measure Name <span class="req-star">*</span></label>
+        <input type="text" id="rp-edit-name" class="form-input" value="${escHtml(m.name)}" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Cost <span class="unit">($)</span></label>
+        <input type="number" id="rp-edit-cost" class="form-input" min="0" value="${m.cost || ''}" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Electricity Savings <span class="unit">(kWh)</span></label>
+        <input type="number" id="rp-edit-elec" class="form-input" value="${m.elec_savings || ''}" data-fuel="elec_savings" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Natural Gas Savings <span class="unit">(therms)</span></label>
+        <input type="number" id="rp-edit-gas" class="form-input" value="${m.gas_savings || ''}" data-fuel="gas_savings" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Steam Savings <span class="unit">(mLbs)</span></label>
+        <input type="number" id="rp-edit-steam" class="form-input" value="${m.steam_savings || ''}" data-fuel="steam_savings" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Oil #2 Savings <span class="unit">(gal)</span></label>
+        <input type="number" id="rp-edit-oil2" class="form-input" value="${m.oil2_savings || ''}" data-fuel="oil2_savings" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Oil #4 Savings <span class="unit">(gal)</span></label>
+        <input type="number" id="rp-edit-oil4" class="form-input" value="${m.oil4_savings || ''}" data-fuel="oil4_savings" />
+      </div>
+    </div>
+    <div class="rp-edit-actions">
+      <button id="rp-edit-save" class="btn btn-primary btn-sm">Save Changes</button>
+      <button id="rp-edit-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+      <span id="rp-edit-error" class="rp-inline-error hidden"></span>
+    </div>
+  `;
+
+  // Bind savings validation on blur
+  wrap.querySelectorAll('[data-fuel]').forEach(input => {
+    input.addEventListener('blur', () => checkSavingsField(input));
+  });
+
+  wrap.querySelector('#rp-edit-save').addEventListener('click', () => saveMeasureEdit(m.id));
+  wrap.querySelector('#rp-edit-cancel').addEventListener('click', () => {
+    editingMeasureId = null;
+    renderMeasuresList();
+  });
+
+  return wrap;
+}
+
+async function saveMeasureEdit(id) {
+  const errEl = document.getElementById('rp-edit-error');
+  const name  = (document.getElementById('rp-edit-name').value || '').trim();
+  if (!name) {
+    errEl.textContent = 'Measure Name is required.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  errEl.classList.add('hidden');
+
+  const body = {
+    name,
+    cost:          parseFloat(document.getElementById('rp-edit-cost').value)  || 0,
+    elec_savings:  parseFloat(document.getElementById('rp-edit-elec').value)  || 0,
+    gas_savings:   parseFloat(document.getElementById('rp-edit-gas').value)   || 0,
+    steam_savings: parseFloat(document.getElementById('rp-edit-steam').value) || 0,
+    oil2_savings:  parseFloat(document.getElementById('rp-edit-oil2').value)  || 0,
+    oil4_savings:  parseFloat(document.getElementById('rp-edit-oil4').value)  || 0,
+  };
+
+  // Check for exceeded savings — ask user to confirm
+  const confirmed = await validateSavingsObj(body);
+  if (!confirmed) return;
+
+  try {
+    const resp = await fetch(`/api/measures/${id}`, {
+      method:  'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    // Update local store
+    const idx = measures.findIndex(m => m.id === id);
+    if (idx !== -1) measures[idx] = data.measure;
+    editingMeasureId = null;
+    renderMeasuresList();
+    showToast('Measure updated');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+// ── Savings validation ────────────────────────────────────────────────────────
+
+/**
+ * Check a single savings input field on blur.
+ * If it exceeds baseline, show warning modal. On No, clear the field.
+ */
+async function checkSavingsField(input) {
+  if (!baselineEnergy) return;
+  const fuelKey = input.dataset.fuel;
+  const meta    = FUEL_META[fuelKey];
+  if (!meta) return;
+  const val     = parseFloat(input.value) || 0;
+  const base    = baselineEnergy[meta.baseKey] || 0;
+  if (val > 0 && base > 0 && val > base) {
+    const ok = await showWarnModal([{label: meta.label, unit: meta.unit, savings: val, baseline: base}]);
+    if (!ok) input.value = '';
+  }
+}
+
+/**
+ * Validate a savings object before saving.
+ * Returns true if user confirms (or no exceedances), false otherwise.
+ */
+async function validateSavingsObj(body) {
+  if (!baselineEnergy) return true;
+  const exceeded = [];
+  Object.entries(FUEL_META).forEach(([key, meta]) => {
+    const val  = parseFloat(body[key]) || 0;
+    const base = baselineEnergy[meta.baseKey] || 0;
+    if (val > 0 && base > 0 && val > base) {
+      exceeded.push({label: meta.label, unit: meta.unit, savings: val, baseline: base});
+    }
+  });
+  if (!exceeded.length) return true;
+  return showWarnModal(exceeded);
+}
+
+/**
+ * Show the warning modal. Returns a promise that resolves true (Yes) or false (No).
+ */
+function showWarnModal(exceeded) {
+  return new Promise(resolve => {
+    _warnResolve = resolve;
+
+    const title = document.getElementById('rp-warn-title');
+    const body  = document.getElementById('rp-warn-body');
+
+    if (title) title.textContent = 'Savings Exceeds Baseline Usage — Are you sure?';
+    if (body) {
+      body.innerHTML = exceeded.map(f =>
+        `<div class="rp-warn-usage">` +
+        `<strong>${escHtml(f.label)}:</strong> ` +
+        `Savings entered: <strong>${fmtNum(f.savings)} ${f.unit}</strong> &nbsp;|&nbsp; ` +
+        `Baseline usage: <strong>${fmtNum(f.baseline)} ${f.unit}</strong>` +
+        `</div>`
+      ).join('');
+    }
+
+    const backdrop = document.getElementById('rp-warn-backdrop');
+    if (backdrop) backdrop.classList.remove('hidden');
+  });
+}
+
+// ── Timeline UI ───────────────────────────────────────────────────────────────
 
 function renderAllTimelineYears() {
   YEARS.forEach(year => renderTimelineYear(year));
@@ -361,7 +607,7 @@ function updateSummaryTable() {
     const tr = document.createElement('tr');
     tr.innerHTML =
       `<td class="rp-sum-year">${year}</td>` +
-      `<td class="rp-sum-names">${ms.map(m => m.name).join(', ')}</td>` +
+      `<td class="rp-sum-names">${ms.map(m => escHtml(m.name)).join(', ')}</td>` +
       `<td class="rp-sum-cost">${yr.cost ? '$' + yr.cost.toLocaleString('en-US') : '—'}</td>` +
       `<td class="${yr.elec < 0 ? 'neg' : ''}">${yr.elec ? fmtNum(yr.elec) : '—'}</td>` +
       `<td class="${yr.gas < 0 ? 'neg' : ''}">${yr.gas ? fmtNum(yr.gas) : '—'}</td>` +
@@ -407,6 +653,10 @@ async function addMeasure() {
     oil4_savings:  parseFloat(document.getElementById('rp-oil4').value)  || 0,
   };
 
+  // Check for exceeded savings — ask user to confirm
+  const confirmed = await validateSavingsObj(body);
+  if (!confirmed) return;
+
   try {
     const resp = await fetch('/api/measures', {
       method:  'POST',
@@ -433,6 +683,7 @@ async function deleteMeasure(id) {
   Object.keys(placements).forEach(yr => {
     placements[yr] = placements[yr].filter(mid => mid !== id);
   });
+  if (editingMeasureId === id) editingMeasureId = null;
 
   try {
     await fetch(`/api/measures/${id}`, {method: 'DELETE'});
@@ -581,11 +832,37 @@ function bindEventListeners() {
     if (e.key === 'Enter') addMeasure();
   });
 
+  // Savings validation on blur for add form
+  ['rp-elec', 'rp-gas', 'rp-steam', 'rp-oil2', 'rp-oil4'].forEach((id, i) => {
+    const fuelKey = ['elec_savings', 'gas_savings', 'steam_savings', 'oil2_savings', 'oil4_savings'][i];
+    const input = document.getElementById(id);
+    if (input) {
+      input.dataset.fuel = fuelKey;
+      input.addEventListener('blur', () => checkSavingsField(input));
+    }
+  });
+
   // File upload
   document.getElementById('rp-upload-input').addEventListener('change', function() {
     if (this.files && this.files[0]) handleUpload(this.files[0]);
     this.value = '';
   });
+
+  // Warning modal Yes/No
+  const warnYes = document.getElementById('rp-warn-yes');
+  const warnNo  = document.getElementById('rp-warn-no');
+  if (warnYes) {
+    warnYes.addEventListener('click', () => {
+      document.getElementById('rp-warn-backdrop').classList.add('hidden');
+      if (_warnResolve) { _warnResolve(true); _warnResolve = null; }
+    });
+  }
+  if (warnNo) {
+    warnNo.addEventListener('click', () => {
+      document.getElementById('rp-warn-backdrop').classList.add('hidden');
+      if (_warnResolve) { _warnResolve(false); _warnResolve = null; }
+    });
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -599,6 +876,14 @@ function clearAddForm() {
 function fmtNum(n) {
   if (n === null || n === undefined) return '—';
   return Number(n).toLocaleString('en-US', {maximumFractionDigits: 1});
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function showToast(msg) {

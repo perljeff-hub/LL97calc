@@ -656,6 +656,36 @@ def delete_measure(measure_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/measures/<int:measure_id>', methods=['PUT'])
+def update_measure(measure_id):
+    data = request.get_json()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    conn = get_saved_db_connection()
+    conn.execute('''
+        UPDATE measures SET
+            name = ?, cost = ?, elec_savings = ?, gas_savings = ?,
+            steam_savings = ?, oil2_savings = ?, oil4_savings = ?
+        WHERE id = ?
+    ''', (
+        name,
+        _safe_float(data.get('cost'))          or 0,
+        _safe_float(data.get('elec_savings'))  or 0,
+        _safe_float(data.get('gas_savings'))   or 0,
+        _safe_float(data.get('steam_savings')) or 0,
+        _safe_float(data.get('oil2_savings'))  or 0,
+        _safe_float(data.get('oil4_savings'))  or 0,
+        measure_id,
+    ))
+    conn.commit()
+    row = conn.execute('SELECT * FROM measures WHERE id = ?', (measure_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'measure': dict(row)})
+
+
 # ── Scenarios ───────────────────────────────────────────────────────────────
 
 @app.route('/api/scenarios')
@@ -772,9 +802,18 @@ def scenario_compute():
     if not occupancy_groups:
         return jsonify({'error': 'occupancy_groups required'}), 400
 
+    # Default energy prices — consistent with /api/calculate defaults
+    PRICES = {
+        'electricity_kwh':    0.15,
+        'natural_gas_therm':  1.50,
+        'district_steam_mlb': 18.00,
+        'fuel_oil_2_gal':     3.00,
+        'fuel_oil_4_gal':     2.90,
+    }
+
     conn = get_saved_db_connection()
     placements = conn.execute('''
-        SELECT sm.year,
+        SELECT sm.year, m.cost,
                m.elec_savings, m.gas_savings, m.steam_savings,
                m.oil2_savings, m.oil4_savings
         FROM scenario_measures sm
@@ -783,8 +822,9 @@ def scenario_compute():
     ''', (scenario_id,)).fetchall()
     conn.close()
 
-    # Accumulate savings per year
-    savings_by_year = {}
+    # Accumulate savings and measure costs per year
+    savings_by_year      = {}
+    measure_cost_by_year = {}
     for p in placements:
         yr = p['year']
         if yr not in savings_by_year:
@@ -794,6 +834,7 @@ def scenario_compute():
         savings_by_year[yr]['steam'] += (p['steam_savings'] or 0)
         savings_by_year[yr]['oil2']  += (p['oil2_savings']  or 0)
         savings_by_year[yr]['oil4']  += (p['oil4_savings']  or 0)
+        measure_cost_by_year[yr] = measure_cost_by_year.get(yr, 0) + (p['cost'] or 0)
 
     user_overrides  = session.get('utility_factors', {})
     utility_factors = get_utility_factors(user_overrides)
@@ -812,15 +853,18 @@ def scenario_compute():
             'fuel_oil_2_gal':     max(0, energy['fuel_oil_2_gal']     - cumulative['oil2']),
             'fuel_oil_4_gal':     max(0, energy['fuel_oil_4_gal']     - cumulative['oil4']),
         }
-        period    = _get_period_for_year(year)
-        emissions = calculate_emissions(adj, utility_factors)[period]['total']
-        limit     = calculate_limit(occupancy_groups, period)
-        fine      = calculate_penalty(emissions, limit)
+        period       = _get_period_for_year(year)
+        emissions    = calculate_emissions(adj, utility_factors)[period]['total']
+        limit        = calculate_limit(occupancy_groups, period)
+        fine         = calculate_penalty(emissions, limit)
+        energy_costs = calculate_utility_costs(adj, PRICES)
         yearly_data.append({
-            'year':      year,
-            'emissions': round(emissions, 4),
-            'limit':     round(limit, 4),
-            'fine':      round(fine, 2),
+            'year':         year,
+            'emissions':    round(emissions, 4),
+            'limit':        round(limit, 4),
+            'fine':         round(fine, 2),
+            'energy_cost':  energy_costs,
+            'measure_cost': round(measure_cost_by_year.get(year, 0), 2),
         })
 
     return jsonify({'yearly_data': yearly_data})

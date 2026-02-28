@@ -809,6 +809,46 @@ body {
   margin-top: 1rem;
 }
 
+/* ── NAV DROPDOWN (Manage sub-menu) ────────────────────────────────────── */
+.nav-dropdown { position: relative; display: inline-block; }
+.nav-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  cursor: pointer;
+}
+.nav-chevron { transition: transform .15s ease; flex-shrink: 0; }
+.nav-dropdown:hover .nav-chevron { transform: rotate(180deg); }
+.nav-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--blue-dark);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  z-index: 300;
+  min-width: 190px;
+  overflow: hidden;
+}
+.nav-dropdown:hover .nav-dropdown-menu { display: block; }
+.nav-dropdown.disabled .nav-dropdown-trigger { opacity: .38; pointer-events: none; }
+.nav-dropdown.disabled:hover .nav-dropdown-menu { display: none; }
+.nav-dropdown-item {
+  display: block;
+  padding: .6rem 1rem;
+  color: rgba(255,255,255,.85);
+  text-decoration: none;
+  font-size: .875rem;
+  font-family: var(--font);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  transition: background var(--transition);
+}
+.nav-dropdown-item:last-child { border-bottom: none; }
+.nav-dropdown-item:hover { background: rgba(255,255,255,.15); color: #fff; }
+.nav-dropdown-item.active { background: rgba(255,255,255,.2); color: #fff; font-weight: 600; }
+.nav-dropdown-item.disabled { opacity: .38; pointer-events: none; }
+
 /* ── MANAGE: scenario bar & header ─────────────────────────────────────── */
 .manage-chart-header {
   display: flex;
@@ -851,6 +891,56 @@ body {
   color: var(--gray-500);
   font-style: italic;
 }
+
+/* ── MANAGE: financial summary table ────────────────────────────────────── */
+.fin-hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .5rem;
+}
+.fin-table-wrap {
+  overflow-x: auto;
+  margin-top: .5rem;
+}
+.fin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .825rem;
+  white-space: nowrap;
+}
+.fin-table th {
+  padding: .45rem .7rem;
+  text-align: right;
+  font-weight: 700;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50);
+}
+.fin-table th:first-child { text-align: left; }
+.fin-group-row th { border-bottom: none; padding-bottom: .25rem; }
+.fin-group-th { text-align: center !important; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.fin-base-th { background: var(--gray-100); color: var(--gray-700); border-left: 2px solid var(--gray-300); border-right: 2px solid var(--gray-300); }
+.fin-scen-th { background: #fde8dc; color: #7d2b00; border-left: 2px solid #f4a97a; border-right: 2px solid #f4a97a; }
+.fin-table td {
+  padding: .38rem .7rem;
+  text-align: right;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-900);
+}
+.fin-table tbody tr:hover td { background: var(--gray-50); }
+.fin-year-td { font-weight: 700; color: var(--blue-dark); text-align: left !important; }
+.fin-base-col { border-left: 1px solid var(--gray-200); }
+.fin-scen-col { border-left: 1px solid #f4c5a5; background: #fffaf8; }
+.fin-table thead .fin-base-col { border-left: 2px solid var(--gray-300); }
+.fin-table thead .fin-scen-col { border-left: 2px solid #f4a97a; }
+.fin-tot-col { font-weight: 600; }
+.fin-fine-nz { color: var(--red); font-weight: 600; }
+.fin-measure-nz { color: #27ae60; font-weight: 600; }
+.fin-fuel-col { color: var(--gray-700); }
+.fin-neg { color: var(--red); }
+.fin-totals-row td { background: var(--gray-100) !important; border-top: 2px solid var(--gray-300); font-weight: 600; }
+.fin-totals-row .fin-scen-col { background: #fdeee6 !important; }
 
 /* ── REDUCTION PLAN: layout ─────────────────────────────────────────────── */
 .rp-scenario-toolbar {
@@ -1039,42 +1129,42 @@ body {
 .rp-timeline {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 580px;
+  gap: 2px;
+  max-height: 500px;
   overflow-y: auto;
   padding-right: 4px;
 }
 .rp-timeline-row {
   display: flex;
   align-items: flex-start;
-  gap: .6rem;
-  min-height: 38px;
+  gap: .45rem;
+  min-height: 26px;
 }
 .rp-year-badge {
   flex-shrink: 0;
-  width: 46px;
-  height: 30px;
+  width: 40px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--blue-dark);
   color: #fff;
-  font-size: .75rem;
+  font-size: .68rem;
   font-weight: 700;
-  border-radius: var(--radius-sm);
-  margin-top: 4px;
+  border-radius: 3px;
+  margin-top: 2px;
   letter-spacing: .02em;
 }
 .rp-drop-zone {
   flex: 1;
-  min-height: 38px;
-  border: 1.5px dashed var(--gray-300);
-  border-radius: var(--radius-sm);
-  padding: 4px 6px;
+  min-height: 26px;
+  border: 1px dashed var(--gray-300);
+  border-radius: 3px;
+  padding: 2px 5px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   transition: background var(--transition), border-color var(--transition);
   background: var(--gray-50);
 }
@@ -1088,22 +1178,22 @@ body {
   background: var(--blue-light);
 }
 .rp-drop-hint {
-  font-size: .72rem;
-  color: var(--gray-500);
+  font-size: .68rem;
+  color: var(--gray-400, #adb5bd);
   pointer-events: none;
-  padding: 0 .25rem;
+  padding: 0 .2rem;
 }
 
 /* Placed chip inside timeline */
 .rp-placed-chip {
   display: inline-flex;
   align-items: center;
-  gap: .3rem;
-  padding: .22rem .5rem;
+  gap: .25rem;
+  padding: .15rem .4rem;
   background: var(--blue);
   color: #fff;
   border-radius: 99px;
-  font-size: .75rem;
+  font-size: .7rem;
   font-weight: 600;
   cursor: grab;
   user-select: none;
@@ -1111,12 +1201,12 @@ body {
 }
 .rp-placed-chip:active { cursor: grabbing; }
 .rp-placed-chip.dragging { opacity: .45; }
-.rp-placed-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.rp-placed-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .rp-chip-remove {
   background: none;
   border: none;
-  color: rgba(255,255,255,.8);
-  font-size: .9rem;
+  color: rgba(255,255,255,.75);
+  font-size: .85rem;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -1125,6 +1215,94 @@ body {
   flex-shrink: 0;
 }
 .rp-chip-remove:hover { color: #fff; }
+
+/* ── REDUCTION PLAN: inline measure editing ─────────────────────────────── */
+.rp-measure-card { cursor: pointer; }
+.rp-measure-card:hover { border-color: var(--blue); }
+.rp-measure-card.rp-measure-placed { cursor: not-allowed; }
+.rp-measure-card.rp-measure-placed:hover { border-color: var(--gray-200); }
+.rp-edit-form {
+  padding: .7rem .75rem;
+  background: #fff;
+  border: 1.5px solid var(--blue);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 3px rgba(36,113,163,.12);
+}
+.rp-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .4rem .65rem;
+  margin-bottom: .5rem;
+}
+.rp-edit-full { grid-column: 1/-1; }
+.rp-edit-grid .input-group { margin-bottom: 0; }
+.rp-edit-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+
+/* ── REDUCTION PLAN: savings-exceeds-usage warning flag ─────────────────── */
+.rp-measure-warn-flag {
+  flex-shrink: 0;
+  font-size: .72rem;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 3px;
+  padding: .1rem .35rem;
+  cursor: default;
+  white-space: nowrap;
+}
+.rp-measure-warn-flag[title] { cursor: help; }
+
+/* ── SAVINGS-EXCEEDS-USAGE warning modal ─────────────────────────────────── */
+.rp-warn-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.rp-warn-dialog {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  max-width: 420px;
+  width: 100%;
+  overflow: hidden;
+}
+.rp-warn-title {
+  padding: .9rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-bottom: 1px solid #fcd34d;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.rp-warn-body {
+  padding: 1rem 1.25rem;
+  font-size: .875rem;
+  line-height: 1.55;
+  color: var(--gray-900);
+}
+.rp-warn-usage {
+  margin-top: .6rem;
+  padding: .5rem .75rem;
+  background: var(--gray-50);
+  border-left: 3px solid #fcd34d;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .82rem;
+  color: var(--gray-700);
+}
+.rp-warn-actions {
+  display: flex;
+  gap: .5rem;
+  padding: .75rem 1.25rem 1rem;
+  justify-content: flex-end;
+}
 
 /* ── REDUCTION PLAN: Summary table ─────────────────────────────────────── */
 .rp-summary-table-wrap { overflow-x: auto; }

@@ -25,8 +25,17 @@
     <nav class="header-nav">
       <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
-      <a href="/manage" class="nav-link active" id="manage-nav-link">Manage</a>
-      <a href="/reduction-plan" class="nav-link">Reduction Plan</a>
+      <!-- Manage dropdown — active because we're on /manage -->
+      <div class="nav-dropdown" id="manage-nav-dropdown">
+        <a class="nav-link active nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item active">Compliance Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
@@ -63,7 +72,7 @@
           <span class="manage-legend-note"><span class="manage-fine-year-example">Red bold</span> years indicate non-compliance under the selected scenario (or baseline).</span>
         </p>
       </div>
-      <a href="/reduction-plan" class="btn btn-ghost" id="manage-rp-btn" style="white-space:nowrap;align-self:flex-start">
+      <a href="/reduction-plan" class="btn btn-ghost" style="white-space:nowrap;align-self:flex-start">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M2 12L6 8l4 4 4-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M12 6V2H8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -72,7 +81,7 @@
       </a>
     </div>
 
-    <!-- Scenario selector (shown only when scenarios exist) -->
+    <!-- Scenario selector -->
     <div id="manage-scenario-bar" class="manage-scenario-bar hidden">
       <span class="manage-scenario-label">Compare Scenario:</span>
       <select id="manage-scenario-select" class="manage-scenario-select">
@@ -86,6 +95,9 @@
     </div>
   </section>
 
+  <!-- ── FINANCIAL SUMMARY TABLE ────────────────────────────────────────── -->
+  <div id="manage-fin-container" class="hidden"></div>
+
 </main>
 
 <footer class="site-footer">
@@ -95,27 +107,23 @@
   </div>
 </footer>
 
-<!-- ── INLINE SCRIPT: active building chip + manage link state ─────────── -->
 <script>
 (function() {
   try {
     const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
     if (a && a.saveName) {
-      const escaped = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const esc = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       document.getElementById('active-building-nav').innerHTML =
-        `<span class="active-building-chip">`+
-        `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
-        `<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
-        `<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>`+
-        `</svg>`+
-        `<span>${escaped}</span>`+
-        `</span>`;
+        '<span class="active-building-chip">' +
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
+        '<rect x="2" y="7" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
+        '<path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" fill="none"/>' +
+        '</svg><span>' + esc + '</span></span>';
     }
   } catch(e) {}
 })();
 </script>
 
-<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/manage.js') }}"></script>
 </body>
