@@ -358,8 +358,8 @@ function buildFinTable(hasScen) {
   yearGrTh.textContent = 'Year';
   gr.appendChild(yearGrTh);
 
-  const baseCols = showFuelDetail ? 7 : 2;   // 5 fuels + total + fine  OR  total + fine
-  const scenCols = showFuelDetail ? 9 : 3;   // + measure cost
+  const baseCols = showFuelDetail ? 8 : 3;   // 5 fuels + total + fine + sum  OR  total + fine + sum
+  const scenCols = showFuelDetail ? 10 : 4;  // + measure cost + sum
 
   const baseTh = document.createElement('th');
   baseTh.colSpan = baseCols;
@@ -391,6 +391,7 @@ function buildFinTable(hasScen) {
     colTh('Energy Cost', 'fin-base-col fin-tot-col');
   }
   colTh('Fine', 'fin-base-col fin-fine-col');
+  colTh('Sum', 'fin-base-col fin-sum-col');
 
   if (hasScen) {
     if (showFuelDetail) {
@@ -401,6 +402,7 @@ function buildFinTable(hasScen) {
     }
     colTh('Fine', 'fin-scen-col fin-fine-col');
     colTh('Measure Cost', 'fin-scen-col fin-measure-col');
+    colTh('Sum', 'fin-scen-col fin-sum-col');
   }
   thead.appendChild(cr);
   table.appendChild(thead);
@@ -408,8 +410,8 @@ function buildFinTable(hasScen) {
   // ── TBODY ─────────────────────────────────────────────────────────────────
   const tbody = document.createElement('tbody');
   const tot = {
-    baseEnergy: 0, baseFine: 0,
-    scenEnergy: 0, scenFine: 0, measureCost: 0,
+    baseEnergy: 0, baseFine: 0, baseSum: 0,
+    scenEnergy: 0, scenFine: 0, measureCost: 0, scenSum: 0,
     baseFuels: Object.fromEntries(FUEL_KEYS.map(k => [k, 0])),
     scenFuels:  Object.fromEntries(FUEL_KEYS.map(k => [k, 0])),
   };
@@ -442,9 +444,12 @@ function buildFinTable(hasScen) {
       tot.baseEnergy += bTotal;
       td($d(bTotal), 'fin-base-col fin-tot-col');
     }
-    // Baseline fine
+    // Baseline fine + sum
     tot.baseFine += bFine;
     td($f(bFine), 'fin-base-col fin-fine-col' + (bFine > 0 ? ' fin-fine-nz' : ''));
+    const bSum = bTotal + bFine;
+    tot.baseSum += bSum;
+    td('<strong>' + $d(bSum) + '</strong>', 'fin-base-col fin-sum-col');
 
     if (sd) {
       const sTotal = sd.energy_cost?.total || 0;
@@ -467,6 +472,9 @@ function buildFinTable(hasScen) {
       td($f(sFine), 'fin-scen-col fin-fine-col' + (sFine > 0 ? ' fin-fine-nz' : ''));
       tot.measureCost += mCost;
       td($f(mCost), 'fin-scen-col fin-measure-col' + (mCost > 0 ? ' fin-measure-nz' : ''));
+      const sSum = sTotal + sFine + mCost;
+      tot.scenSum += sSum;
+      td('<strong>' + $d(sSum) + '</strong>', 'fin-scen-col fin-sum-col');
     }
     tbody.appendChild(tr);
   });
@@ -490,6 +498,7 @@ function buildFinTable(hasScen) {
     ttd('<strong>' + $d(tot.baseEnergy) + '</strong>', 'fin-base-col fin-tot-col');
   }
   ttd('<strong>' + $d(tot.baseFine) + '</strong>', 'fin-base-col fin-fine-col');
+  ttd('<strong>' + $d(tot.baseSum) + '</strong>', 'fin-base-col fin-sum-col');
   if (hasScen) {
     if (showFuelDetail) {
       FUEL_KEYS.forEach(k => ttd('<strong>' + $d(tot.scenFuels[k]) + '</strong>', 'fin-scen-col fin-fuel-col'));
@@ -499,6 +508,7 @@ function buildFinTable(hasScen) {
     }
     ttd('<strong>' + $d(tot.scenFine) + '</strong>', 'fin-scen-col fin-fine-col');
     ttd('<strong>' + $d(tot.measureCost) + '</strong>', 'fin-scen-col fin-measure-col');
+    ttd('<strong>' + $d(tot.scenSum) + '</strong>', 'fin-scen-col fin-sum-col');
   }
   tfoot.appendChild(ttr);
   table.appendChild(tfoot);
