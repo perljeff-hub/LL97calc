@@ -51,6 +51,10 @@ let baselineEnergy    = null; // {elec, gas, steam, fo2, fo4} — all numbers
 // Warning modal promise resolver
 let _warnResolve = null;
 
+// Pending navigation (used by unsaved-changes modal)
+let _pendingNavHref       = null;
+let _pendingNavIsTimeline = false;
+
 // Track which measure card is currently being edited (id or null)
 let editingMeasureId  = null;
 let isDirty           = false;       // unsaved timeline changes
@@ -1237,26 +1241,25 @@ function bindEventListeners() {
     });
   }
 
-  // Nav guard — confirm before leaving with unsaved changes
+  // Nav guard — show unsaved-changes modal before leaving with unsaved changes
   document.querySelectorAll('.nav-link, .nav-dropdown-item').forEach(link => {
     link.addEventListener('click', e => {
       if (!isDirty) return;
       const href = link.getAttribute('href');
       if (!href || href === '#' || href === window.location.pathname) return;
       e.preventDefault();
-      if (confirm('You have unsaved changes to this scenario. Leave without saving?')) {
-        isDirty = false;
-        window.location.href = href;
-      }
+      showUnsavedModal(href, false);
     });
   });
 
   // "See Scenario on Timeline" button
   document.getElementById('rp-see-timeline-btn').addEventListener('click', () => {
     if (isDirty) {
-      document.getElementById('rp-unsaved-backdrop').classList.remove('hidden');
+      showUnsavedModal('/manage', true);
     } else {
-      goToTimeline();
+      _pendingNavHref       = '/manage';
+      _pendingNavIsTimeline = true;
+      doNavigate();
     }
   });
 
@@ -1264,14 +1267,16 @@ function bindEventListeners() {
   document.getElementById('rp-unsaved-save').addEventListener('click', async () => {
     document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
     await saveScenario(false);
-    goToTimeline();
+    doNavigate();
   });
   document.getElementById('rp-unsaved-skip').addEventListener('click', () => {
     document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
-    goToTimeline();
+    doNavigate();
   });
   document.getElementById('rp-unsaved-cancel').addEventListener('click', () => {
     document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    _pendingNavHref       = null;
+    _pendingNavIsTimeline = false;
   });
 
   // Suggest Plan modal
@@ -1348,13 +1353,20 @@ function markClean() {
   updateActiveChip(false);
 }
 
-function goToTimeline() {
-  if (currentScenarioId) {
+function showUnsavedModal(href, isTimeline) {
+  _pendingNavHref       = href;
+  _pendingNavIsTimeline = isTimeline;
+  document.getElementById('rp-unsaved-backdrop').classList.remove('hidden');
+}
+
+function doNavigate() {
+  if (_pendingNavIsTimeline && currentScenarioId) {
     sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
   }
-  isDirty = false;  // prevent nav guard from blocking
-  window.location.href = '/manage';
+  isDirty = false;  // prevent beforeunload from firing
+  window.location.href = _pendingNavHref;
 }
+
 
 function updateActiveChip(dirty) {
   const chip = document.querySelector('#active-building-nav .active-building-chip');
