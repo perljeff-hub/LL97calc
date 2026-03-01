@@ -124,7 +124,7 @@ def normalize_espm_type(raw):
 
 # Default energy prices and annual escalators (% per year, compounding)
 DEFAULT_ENERGY_PRICES = {
-    'electricity_kwh':    {'label': 'Electricity',      'unit': '$/kWh',   'price': 0.15,  'escalator': 3.0},
+    'electricity_kwh':    {'label': 'Electricity',      'unit': '$/kWh',   'price': 0.20,  'escalator': 3.0},
     'natural_gas_therm':  {'label': 'Natural Gas',      'unit': '$/therm', 'price': 1.50,  'escalator': 3.0},
     'district_steam_mlb': {'label': 'District Steam',   'unit': '$/mLb',   'price': 18.00, 'escalator': 3.0},
     'fuel_oil_2_gal':     {'label': '#2 Fuel Oil',      'unit': '$/gal',   'price': 3.00,  'escalator': 3.0},
@@ -831,6 +831,20 @@ def rename_scenario(scenario_id):
     if not scenario:
         return jsonify({'error': 'Not found'}), 404
     return jsonify({'scenario': dict(scenario)})
+
+
+@app.route('/api/scenarios/<int:scenario_id>', methods=['DELETE'])
+def delete_scenario(scenario_id):
+    conn = get_saved_db_connection()
+    scenario = conn.execute('SELECT * FROM scenarios WHERE id = ?', (scenario_id,)).fetchone()
+    if not scenario:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    conn.execute('DELETE FROM scenario_measures WHERE scenario_id = ?', (scenario_id,))
+    conn.execute('DELETE FROM scenarios WHERE id = ?', (scenario_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted'})
 
 
 @app.route('/api/scenarios/save', methods=['POST'])

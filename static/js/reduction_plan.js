@@ -51,6 +51,10 @@ let baselineEnergy    = null; // {elec, gas, steam, fo2, fo4} — all numbers
 // Warning modal promise resolver
 let _warnResolve = null;
 
+// Pending navigation (used by unsaved-changes modal)
+let _pendingNavHref       = null;
+let _pendingNavIsTimeline = false;
+
 // Track which measure card is currently being edited (id or null)
 let editingMeasureId  = null;
 let isDirty           = false;       // unsaved timeline changes
@@ -140,7 +144,15 @@ async function loadScenarios() {
     opt.textContent = s.name;
     sel.appendChild(opt);
   });
+
+  // Check if Timeline passed a scenario to pre-select
   currentScenarioId = scenarios[0].id;
+  const timelineScenId = sessionStorage.getItem('ll97_timeline_scenario_id');
+  if (timelineScenId) {
+    sessionStorage.removeItem('ll97_timeline_scenario_id');
+    const targetId = parseInt(timelineScenId, 10);
+    if (scenarios.some(s => s.id === targetId)) currentScenarioId = targetId;
+  }
   sel.value = currentScenarioId;
 
   // Load current scenario's placements
@@ -250,13 +262,33 @@ function getExceededFuels(m) {
   return exceeded;
 }
 
+function getUnusedFuelSavings(m) {
+  if (!baselineEnergy) return [];
+  const unused = [];
+  Object.entries(FUEL_META).forEach(([key, meta]) => {
+    const savings = parseFloat(m[key]) || 0;
+    const baseline = baselineEnergy[meta.baseKey] || 0;
+    // Only flag positive savings on a fuel with no baseline usage
+    if (savings > 0 && baseline === 0) {
+      unused.push({label: meta.label, unit: meta.unit, savings});
+    }
+  });
+  return unused;
+}
+
+function hasMissingCost(m) {
+  return !(m.cost > 0);
+}
+
 function makeMeasureCard(m, isPlaced) {
   const card      = document.createElement('div');
   card.className  = 'rp-measure-card' + (isPlaced ? ' rp-measure-placed' : '');
   card.dataset.id = m.id;
   card.draggable  = !isPlaced;
 
-  const exceeded = getExceededFuels(m);
+  const exceeded  = getExceededFuels(m);
+  const unusedFuels = getUnusedFuelSavings(m);
+  const missingCost = hasMissingCost(m);
 
   const info      = document.createElement('div');
   info.className  = 'rp-measure-info';
@@ -269,13 +301,30 @@ function makeMeasureCard(m, isPlaced) {
   name.textContent = m.name;
   nameRow.appendChild(name);
 
-  // Warning flag badge if savings exceed baseline
+  // Warning flag — savings exceed baseline
   if (exceeded.length) {
     const flag    = document.createElement('span');
     flag.className = 'rp-measure-warn-flag';
-    flag.title    = 'Savings exceed baseline usage for: ' +
-                    exceeded.map(f => f.label).join(', ');
+    flag.title    = 'Savings exceed baseline usage for: ' + exceeded.map(f => f.label).join(', ');
     flag.textContent = '\u26a0 Exceeds Baseline';
+    nameRow.appendChild(flag);
+  }
+
+  // Warning flag — savings on unused fuel
+  if (unusedFuels.length) {
+    const flag    = document.createElement('span');
+    flag.className = 'rp-measure-warn-flag rp-measure-warn-unused';
+    flag.title    = 'Building shows no baseline usage for: ' + unusedFuels.map(f => f.label).join(', ');
+    flag.textContent = '\u26a0 Unused Fuel';
+    nameRow.appendChild(flag);
+  }
+
+  // Warning flag — no cost entered
+  if (missingCost) {
+    const flag    = document.createElement('span');
+    flag.className = 'rp-measure-warn-flag rp-measure-warn-nocost';
+    flag.title    = 'No capital cost entered for this measure';
+    flag.textContent = '\u26a0 No Cost';
     nameRow.appendChild(flag);
   }
 
@@ -297,6 +346,12 @@ function makeMeasureCard(m, isPlaced) {
     note.textContent = 'Note: ' + exceeded.map(f =>
       `${f.label} savings (${fmtNum(f.savings)} ${f.unit}) exceed baseline usage (${fmtNum(f.baseline)} ${f.unit})`
     ).join('; ');
+    info.appendChild(note);
+  }
+  if (unusedFuels.length) {
+    const note  = document.createElement('div');
+    note.className = 'rp-measure-warn-note';
+    note.textContent = 'Note: Building has no baseline usage for ' + unusedFuels.map(f => f.label).join(', ');
     info.appendChild(note);
   }
   info.appendChild(meta);
@@ -380,6 +435,10 @@ function makeEditForm(m) {
     input.addEventListener('blur', () => checkSavingsField(input));
   });
 
+  // Bind cost validation on blur
+  const editCostInput = wrap.querySelector('#rp-edit-cost');
+  if (editCostInput) editCostInput.addEventListener('blur', () => checkCostField(editCostInput));
+
   wrap.querySelector('#rp-edit-save').addEventListener('click', () => saveMeasureEdit(m.id));
   wrap.querySelector('#rp-edit-cancel').addEventListener('click', () => {
     editingMeasureId = null;
@@ -437,7 +496,7 @@ async function saveMeasureEdit(id) {
 
 /**
  * Check a single savings input field on blur.
- * If it exceeds baseline, show warning modal. On No, clear the field.
+ * If it exceeds baseline OR uses a fuel with no baseline, show warning modal.
  */
 async function checkSavingsField(input) {
   if (!baselineEnergy) return;
@@ -446,9 +505,26 @@ async function checkSavingsField(input) {
   if (!meta) return;
   const val     = parseFloat(input.value) || 0;
   const base    = baselineEnergy[meta.baseKey] || 0;
-  if (val > 0 && base > 0 && val > base) {
+  if (val > 0 && base === 0) {
+    // Unused fuel warning
+    const ok = await showWarnModal([{label: meta.label, unit: meta.unit, savings: val, baseline: 0, unusedFuel: true}]);
+    if (!ok) input.value = '';
+  } else if (val > 0 && base > 0 && val > base) {
     const ok = await showWarnModal([{label: meta.label, unit: meta.unit, savings: val, baseline: base}]);
     if (!ok) input.value = '';
+  }
+}
+
+/**
+ * Check the cost field on blur. If 0, warn the user.
+ */
+async function checkCostField(input) {
+  const val = parseFloat(input.value) || 0;
+  if (val === 0) {
+    const ok = await showNoCostModal();
+    if (!ok) {
+      input.focus();
+    }
   }
 }
 
@@ -480,19 +556,51 @@ function showWarnModal(exceeded) {
     const title = document.getElementById('rp-warn-title');
     const body  = document.getElementById('rp-warn-body');
 
-    if (title) title.textContent = 'Savings Exceeds Baseline Usage — Are you sure?';
+    const hasUnused = exceeded.some(f => f.unusedFuel);
+    if (title) {
+      title.textContent = hasUnused
+        ? 'Fuel Not Currently in Use — Are you sure?'
+        : 'Savings Exceeds Baseline Usage — Are you sure?';
+    }
     if (body) {
       body.innerHTML = exceeded.map(f =>
-        `<div class="rp-warn-usage">` +
-        `<strong>${escHtml(f.label)}:</strong> ` +
-        `Savings entered: <strong>${fmtNum(f.savings)} ${f.unit}</strong> &nbsp;|&nbsp; ` +
-        `Baseline usage: <strong>${fmtNum(f.baseline)} ${f.unit}</strong>` +
-        `</div>`
+        f.unusedFuel
+          ? `<div class="rp-warn-usage"><strong>${escHtml(f.label)}:</strong> Building shows no baseline usage for this fuel. ` +
+            `Savings entered: <strong>${fmtNum(f.savings)} ${f.unit}</strong></div>`
+          : `<div class="rp-warn-usage"><strong>${escHtml(f.label)}:</strong> ` +
+            `Savings entered: <strong>${fmtNum(f.savings)} ${f.unit}</strong> &nbsp;|&nbsp; ` +
+            `Baseline usage: <strong>${fmtNum(f.baseline)} ${f.unit}</strong></div>`
       ).join('');
     }
 
     const backdrop = document.getElementById('rp-warn-backdrop');
     if (backdrop) backdrop.classList.remove('hidden');
+  });
+}
+
+/**
+ * Show a "no cost" warning. Returns promise resolving true (keep $0) / false (enter a cost).
+ */
+function showNoCostModal() {
+  return new Promise(resolve => {
+    _warnResolve = resolve;
+    const title = document.getElementById('rp-warn-title');
+    const body  = document.getElementById('rp-warn-body');
+    const yes   = document.getElementById('rp-warn-yes');
+    const no    = document.getElementById('rp-warn-no');
+    if (title) title.textContent = 'Measure has no cost — Are you sure?';
+    if (body)  body.innerHTML    = '<div class="rp-warn-usage">No capital cost has been entered for this measure. Proceed with $0?</div>';
+    if (yes)   yes.textContent   = 'Yes, keep $0';
+    if (no)    no.textContent    = 'No, enter a cost';
+    const backdrop = document.getElementById('rp-warn-backdrop');
+    if (backdrop) backdrop.classList.remove('hidden');
+  }).then(result => {
+    // Reset button labels after modal closes
+    const yes = document.getElementById('rp-warn-yes');
+    const no  = document.getElementById('rp-warn-no');
+    if (yes) yes.textContent = 'Yes, Keep Value';
+    if (no)  no.textContent  = 'No, Clear Field';
+    return result;
   });
 }
 
@@ -731,7 +839,8 @@ function updateSummaryTable() {
     `<td>${totals.steam ? fmtNum(totals.steam) : '—'}</td>` +
     `<td>${totals.oil2  ? fmtNum(totals.oil2)  : '—'}</td>` +
     `<td>${totals.oil4  ? fmtNum(totals.oil4)  : '—'}</td>` +
-    `<td colspan="2"></td>` +
+    `<td>${totals.costSav > 0 ? '<strong>$' + Math.round(totals.costSav).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
+    `<td>${totals.carbSav > 0.005 ? '<strong>' + fmtNum(totals.carbSav) + '</strong>' : '—'}</td>` +
     `</tr>`;
 }
 
@@ -898,26 +1007,33 @@ async function saveScenario(asNew) {
   }
 }
 
-// ── Scenario rename ───────────────────────────────────────────────────────────
+// ── Pencil dropdown menu ──────────────────────────────────────────────────────
 
-function openRenameForm() {
+function togglePencilMenu() {
+  document.getElementById('rp-pencil-menu').classList.toggle('hidden');
+}
+
+function closePencilMenu() {
+  document.getElementById('rp-pencil-menu').classList.add('hidden');
+}
+
+// ── Scenario rename (modal) ────────────────────────────────────────────────────
+
+function openRenameModal() {
+  closePencilMenu();
   const sel = document.getElementById('rp-scenario-select');
-  const form = document.getElementById('rp-rename-form');
+  const current = sel.options[sel.selectedIndex];
   const input = document.getElementById('rp-rename-input');
   const errEl = document.getElementById('rp-rename-error');
-  // Pre-fill with current scenario name
-  const current = sel.options[sel.selectedIndex];
   input.value = current ? current.textContent : '';
   errEl.classList.add('hidden');
-  form.classList.remove('hidden');
-  document.getElementById('rp-rename-btn').classList.add('hidden');
+  document.getElementById('rp-rename-backdrop').classList.remove('hidden');
   input.focus();
   input.select();
 }
 
-function closeRenameForm() {
-  document.getElementById('rp-rename-form').classList.add('hidden');
-  document.getElementById('rp-rename-btn').classList.remove('hidden');
+function closeRenameModal() {
+  document.getElementById('rp-rename-backdrop').classList.add('hidden');
 }
 
 async function confirmRename() {
@@ -940,18 +1056,66 @@ async function confirmRename() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Rename failed');
 
-    // Update select option and local scenarios array
     const sel = document.getElementById('rp-scenario-select');
     const opt = sel.options[sel.selectedIndex];
     if (opt) opt.textContent = data.scenario.name;
     const s = scenarios.find(x => x.id === currentScenarioId);
     if (s) s.name = data.scenario.name;
 
-    closeRenameForm();
+    closeRenameModal();
     showToast('Scenario renamed');
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove('hidden');
+  }
+}
+
+// ── Delete scenario ────────────────────────────────────────────────────────────
+
+async function deleteScenario() {
+  closePencilMenu();
+  document.getElementById('rp-save-dropdown').classList.add('hidden');
+
+  const sel = document.getElementById('rp-scenario-select');
+  const opt = sel.options[sel.selectedIndex];
+  const scenName = opt ? opt.textContent : 'this scenario';
+
+  if (!confirm(`Are you sure you want to delete "${scenName}"?\n\nThis will not delete any of the measures themselves.`)) return;
+
+  try {
+    const resp = await fetch(`/api/scenarios/${currentScenarioId}`, {method: 'DELETE'});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Delete failed');
+
+    scenarios = scenarios.filter(s => s.id !== currentScenarioId);
+    opt && opt.remove();
+
+    if (scenarios.length === 0) {
+      // Auto-create a replacement scenario
+      const saveResp = await fetch('/api/scenarios/save', {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body:    JSON.stringify({building_save_name: currentBuilding, placements: []}),
+      });
+      const saveData = await saveResp.json();
+      scenarios = [saveData.scenario];
+      const newOpt = document.createElement('option');
+      newOpt.value = saveData.scenario.id;
+      newOpt.textContent = saveData.scenario.name;
+      sel.appendChild(newOpt);
+    }
+
+    currentScenarioId = scenarios[0].id;
+    sel.value = currentScenarioId;
+    placements = {};
+    await loadScenarioPlacements(currentScenarioId);
+    renderAllTimelineYears();
+    renderMeasuresList();
+    updateSummaryTable();
+    markClean();
+    showToast('Scenario deleted');
+  } catch (e) {
+    showError('Delete failed: ' + e.message);
   }
 }
 
@@ -972,7 +1136,7 @@ function clearAllPlacements() {
 function bindEventListeners() {
   // Scenario selector
   document.getElementById('rp-scenario-select').addEventListener('change', async function() {
-    closeRenameForm();
+    closePencilMenu();
     currentScenarioId = parseInt(this.value, 10);
     await loadScenarioPlacements(currentScenarioId);
     renderAllTimelineYears();
@@ -980,13 +1144,27 @@ function bindEventListeners() {
     updateSummaryTable();
   });
 
-  // Rename scenario
-  document.getElementById('rp-rename-btn').addEventListener('click', openRenameForm);
+  // Pencil dropdown
+  document.getElementById('rp-pencil-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    togglePencilMenu();
+  });
+  document.getElementById('rp-pencil-rename').addEventListener('click', openRenameModal);
+  document.getElementById('rp-pencil-delete').addEventListener('click', deleteScenario);
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#rp-pencil-wrap')) closePencilMenu();
+  });
+
+  // Rename modal
   document.getElementById('rp-rename-confirm').addEventListener('click', confirmRename);
-  document.getElementById('rp-rename-cancel').addEventListener('click', closeRenameForm);
+  document.getElementById('rp-rename-cancel').addEventListener('click', closeRenameModal);
+  document.getElementById('rp-rename-close').addEventListener('click', closeRenameModal);
   document.getElementById('rp-rename-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') confirmRename();
-    if (e.key === 'Escape') closeRenameForm();
+    if (e.key === 'Escape') closeRenameModal();
+  });
+  document.getElementById('rp-rename-backdrop').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeRenameModal();
   });
 
   // Clear all placements
@@ -1011,6 +1189,9 @@ function bindEventListeners() {
     saveScenario(true);
   });
 
+  // Delete scenario (from save dropdown)
+  document.getElementById('rp-delete-scenario-btn').addEventListener('click', deleteScenario);
+
   // Add measure toggle
   document.getElementById('rp-add-toggle').addEventListener('click', () => {
     document.getElementById('rp-add-form').classList.toggle('hidden');
@@ -1034,6 +1215,10 @@ function bindEventListeners() {
     }
   });
 
+  // Cost validation on blur for add form
+  const costInput = document.getElementById('rp-cost');
+  if (costInput) costInput.addEventListener('blur', () => checkCostField(costInput));
+
   // File upload
   document.getElementById('rp-upload-input').addEventListener('change', function() {
     if (this.files && this.files[0]) handleUpload(this.files[0]);
@@ -1056,27 +1241,42 @@ function bindEventListeners() {
     });
   }
 
-  // Nav guard — confirm before leaving with unsaved changes
+  // Nav guard — show unsaved-changes modal before leaving with unsaved changes
   document.querySelectorAll('.nav-link, .nav-dropdown-item').forEach(link => {
     link.addEventListener('click', e => {
       if (!isDirty) return;
       const href = link.getAttribute('href');
       if (!href || href === '#' || href === window.location.pathname) return;
       e.preventDefault();
-      if (confirm('You have unsaved changes to this scenario. Leave without saving?')) {
-        isDirty = false;
-        window.location.href = href;
-      }
+      showUnsavedModal(href, false);
     });
   });
 
   // "See Scenario on Timeline" button
   document.getElementById('rp-see-timeline-btn').addEventListener('click', () => {
-    if (currentScenarioId) {
-      sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+    if (isDirty) {
+      showUnsavedModal('/manage', true);
+    } else {
+      _pendingNavHref       = '/manage';
+      _pendingNavIsTimeline = true;
+      doNavigate();
     }
-    isDirty = false;  // prevent nav guard from blocking
-    window.location.href = '/manage';
+  });
+
+  // Unsaved-changes modal
+  document.getElementById('rp-unsaved-save').addEventListener('click', async () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    await saveScenario(false);
+    doNavigate();
+  });
+  document.getElementById('rp-unsaved-skip').addEventListener('click', () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    doNavigate();
+  });
+  document.getElementById('rp-unsaved-cancel').addEventListener('click', () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    _pendingNavHref       = null;
+    _pendingNavIsTimeline = false;
   });
 
   // Suggest Plan modal
@@ -1152,6 +1352,21 @@ function markClean() {
   isDirty = false;
   updateActiveChip(false);
 }
+
+function showUnsavedModal(href, isTimeline) {
+  _pendingNavHref       = href;
+  _pendingNavIsTimeline = isTimeline;
+  document.getElementById('rp-unsaved-backdrop').classList.remove('hidden');
+}
+
+function doNavigate() {
+  if (_pendingNavIsTimeline && currentScenarioId) {
+    sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+  }
+  isDirty = false;  // prevent beforeunload from firing
+  window.location.href = _pendingNavHref;
+}
+
 
 function updateActiveChip(dirty) {
   const chip = document.querySelector('#active-building-nav .active-building-chip');
