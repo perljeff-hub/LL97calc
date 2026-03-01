@@ -200,12 +200,14 @@ function updateActiveBuildingNav() {
   if (!nav) return;
 
   if (currentSaveName) {
-    const dotHtml = isDirty
-      ? '<span class="unsaved-dot" title="Unsaved changes">&#9679;</span>'
-      : '';
-    nav.innerHTML =
-      `<span class="active-building-chip">`+
-      `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
+    const dirtyAttr = isDirty ? ' dirty' : '';
+    const r = currentBuildingData || {};
+    let tipHtml = `<div class="abt-name">${esc(r.property_name || currentSaveName)}</div>`;
+    if (r.address)          tipHtml += `<div class="abt-row">${esc(r.address)}${r.borough ? ', ' + esc(r.borough) : ''}${r.postcode ? ' ' + esc(r.postcode) : ''}</div>`;
+    if (r.gross_floor_area) tipHtml += `<div class="abt-row"><strong>${Number(r.gross_floor_area).toLocaleString('en-US')}</strong> sq ft</div>`;
+    if (r.energy_star_score)tipHtml += `<div class="abt-row">ENERGY STAR: <strong>${esc(r.energy_star_score)}</strong></div>`;
+    const svgBuilding =
+      `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">`+
       `<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>`+
       `<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>`+
       `<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>`+
@@ -213,10 +215,13 @@ function updateActiveBuildingNav() {
       `<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>`+
       `<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>`+
       `<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`+
-      `</svg>`+
-      `<span class="active-building-chip-name">${esc(currentSaveName)}</span>`+
-      dotHtml+
-      `</span>`;
+      `</svg>`;
+    nav.innerHTML =
+      `<div class="active-building-chip-wrap">`+
+      `<span class="active-building-chip${dirtyAttr}">${svgBuilding}`+
+      `<span class="active-building-chip-name">${esc(currentSaveName)}</span></span>`+
+      `<div class="active-building-tooltip">${tipHtml}</div>`+
+      `</div>`;
   } else {
     nav.innerHTML = '';
   }
