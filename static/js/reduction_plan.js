@@ -1253,11 +1253,25 @@ function bindEventListeners() {
 
   // "See Scenario on Timeline" button
   document.getElementById('rp-see-timeline-btn').addEventListener('click', () => {
-    if (currentScenarioId) {
-      sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+    if (isDirty) {
+      document.getElementById('rp-unsaved-backdrop').classList.remove('hidden');
+    } else {
+      goToTimeline();
     }
-    isDirty = false;  // prevent nav guard from blocking
-    window.location.href = '/manage';
+  });
+
+  // Unsaved-changes modal
+  document.getElementById('rp-unsaved-save').addEventListener('click', async () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    await saveScenario(false);
+    goToTimeline();
+  });
+  document.getElementById('rp-unsaved-skip').addEventListener('click', () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
+    goToTimeline();
+  });
+  document.getElementById('rp-unsaved-cancel').addEventListener('click', () => {
+    document.getElementById('rp-unsaved-backdrop').classList.add('hidden');
   });
 
   // Suggest Plan modal
@@ -1332,6 +1346,14 @@ function markDirty() {
 function markClean() {
   isDirty = false;
   updateActiveChip(false);
+}
+
+function goToTimeline() {
+  if (currentScenarioId) {
+    sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+  }
+  isDirty = false;  // prevent nav guard from blocking
+  window.location.href = '/manage';
 }
 
 function updateActiveChip(dirty) {
