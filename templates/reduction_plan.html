@@ -19,11 +19,11 @@
       </svg>
       <div>
         <div class="header-title">NYC LL97 Planner</div>
-        <div class="header-sub">For calculating LL97 exposure and making a plan to reduce emissions.</div>
+        <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
       </div>
-      <div id="active-building-nav" class="active-building-nav"></div>
     </div>
     <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — Reduction Plan is the active sub-item -->
       <div class="nav-dropdown" id="manage-nav-dropdown">
@@ -68,13 +68,13 @@
       <div class="rp-scenario-left">
         <span class="rp-scenario-label">Scenario:</span>
         <select id="rp-scenario-select" class="rp-scenario-select"></select>
-        <button id="rp-rename-btn" class="btn btn-ghost btn-sm" title="Rename this scenario">✎ Rename</button>
-        <span id="rp-rename-form" class="rp-rename-form hidden">
-          <input type="text" id="rp-rename-input" class="form-input rp-rename-input" placeholder="New name" />
-          <button id="rp-rename-confirm" class="btn btn-primary btn-sm">OK</button>
-          <button id="rp-rename-cancel" class="btn btn-secondary btn-sm">Cancel</button>
-          <span id="rp-rename-error" class="rp-inline-error hidden"></span>
-        </span>
+        <div class="rp-pencil-wrap" id="rp-pencil-wrap">
+          <button id="rp-pencil-btn" class="btn btn-ghost btn-sm rp-pencil-btn" title="Scenario options">✎</button>
+          <div id="rp-pencil-menu" class="rp-pencil-menu hidden">
+            <button id="rp-pencil-rename" class="rp-pencil-item">Rename this Scenario</button>
+            <button id="rp-pencil-delete" class="rp-pencil-item rp-pencil-delete">Delete this Scenario</button>
+          </div>
+        </div>
         <button id="rp-see-timeline-btn" class="btn btn-ghost btn-sm" title="View this scenario on the Compliance Timeline">
           See Scenario on Timeline →
         </button>
@@ -99,6 +99,7 @@
             <button id="rp-save-dropdown-btn" class="btn btn-save rp-save-caret" title="More save options">&#9660;</button>
             <div id="rp-save-dropdown" class="rp-save-dropdown hidden">
               <button id="rp-save-new-btn" class="rp-save-dropdown-item">Save As New Scenario</button>
+              <button id="rp-delete-scenario-btn" class="rp-save-dropdown-item rp-save-dropdown-danger">Delete this Scenario</button>
             </div>
           </div>
         </div>
@@ -221,8 +222,8 @@
               <th>Steam Savings <span class="th-unit">(mLbs)</span></th>
               <th>Oil #2 Savings <span class="th-unit">(gal)</span></th>
               <th>Oil #4 Savings <span class="th-unit">(gal)</span></th>
-              <th>Annual Cost Savings <span class="th-unit">($)</span></th>
-              <th>Annual Carbon Savings <span class="th-unit">(tCO₂e)</span></th>
+              <th>Energy Cost Savings <span class="th-unit">($)</span></th>
+              <th>Carbon Savings <span class="th-unit">(tCO₂e)</span></th>
             </tr>
           </thead>
           <tbody id="rp-summary-tbody"></tbody>
@@ -285,10 +286,31 @@
     timer = setTimeout(function() {
       menu.classList.remove('open');
       dd.classList.remove('open');
-    }, 3000);
+    }, 1000);
   });
 })();
 </script>
+
+<!-- ── RENAME SCENARIO MODAL ──────────────────────────────────────────────── -->
+<div id="rp-rename-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rp-rename-title">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="rp-rename-title">Rename Scenario</h3>
+      <button id="rp-rename-close" class="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-group">
+        <label class="input-label">New name <span class="req-star">*</span></label>
+        <input type="text" id="rp-rename-input" class="form-input" placeholder="e.g. Aggressive Retrofits" />
+      </div>
+      <span id="rp-rename-error" class="rp-inline-error hidden"></span>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:.5rem;padding:1rem 1.5rem">
+      <button id="rp-rename-confirm" class="btn btn-primary">Rename</button>
+      <button id="rp-rename-cancel" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── SAVINGS WARNING MODAL ──────────────────────────────────────────────── -->
 <div id="rp-warn-backdrop" class="rp-warn-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rp-warn-title">

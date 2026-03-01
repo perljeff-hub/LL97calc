@@ -42,6 +42,7 @@ let cachedYears          = [];
 let cachedBaseFines      = [];
 let cachedScenData       = null;
 let cachedScenName       = '';
+let cachedScenId         = null;
 let showFuelDetail       = false;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
@@ -149,10 +150,11 @@ async function loadScenarios(buildingName, results, state) {
         if (!compResp.ok || compData.error) throw new Error(compData.error);
         cachedScenData = compData.yearly_data;
         cachedScenName = scenarios.find(s => s.id === scenarioId)?.name || '';
+        cachedScenId   = scenarioId;
         buildChart(buildingName, results, cachedScenData, cachedScenName);
         buildFinancialTable();
       } catch (e) {
-        cachedScenData = null; cachedScenName = '';
+        cachedScenData = null; cachedScenName = ''; cachedScenId = null;
         buildChart(buildingName, results);
         buildFinancialTable();
       } finally {
@@ -165,6 +167,15 @@ async function loadScenarios(buildingName, results, state) {
       select.dispatchEvent(new Event('change'));
     }
   } catch (e) { /* scenarios optional */ }
+
+  // Store active scenario when navigating to Reduction Plan
+  document.querySelectorAll('a[href="/reduction-plan"]').forEach(link => {
+    link.addEventListener('click', () => {
+      if (cachedScenId) {
+        sessionStorage.setItem('ll97_timeline_scenario_id', String(cachedScenId));
+      }
+    });
+  });
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────

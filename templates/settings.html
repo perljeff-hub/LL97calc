@@ -18,11 +18,11 @@
       </svg>
       <div>
         <div class="header-title">NYC LL97 Planner</div>
-        <div class="header-sub">For calculating LL97 exposure and making a plan to reduce emissions.</div>
+        <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
       </div>
-      <div id="active-building-nav" class="active-building-nav"></div>
     </div>
     <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
       <div class="nav-dropdown disabled" id="manage-nav-dropdown" title="Save or Load a Saved Building to enable Manage">
@@ -401,7 +401,7 @@ document.querySelectorAll('.factor-input').forEach(input => {
     timer = setTimeout(function() {
       menu.classList.remove('open');
       dd.classList.remove('open');
-    }, 3000);
+    }, 1000);
   });
 })();
 </script>

@@ -18,11 +18,11 @@
       </svg>
       <div>
         <div class="header-title">NYC LL97 Planner</div>
-        <div class="header-sub">For calculating LL97 exposure and making a plan to reduce emissions.</div>
+        <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
       </div>
-      <div id="active-building-nav" class="active-building-nav"></div>
     </div>
     <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <div class="nav-dropdown" id="manage-nav-dropdown">
         <a href="/manage" class="nav-link nav-dropdown-trigger" id="manage-nav-btn">
@@ -117,7 +117,7 @@
       timer = setTimeout(function() {
         menu.classList.remove('open');
         dd.classList.remove('open');
-      }, 3000);
+      }, 1000);
     });
   })();
 
@@ -249,7 +249,7 @@
       menu.classList.add('open'); dd.classList.add('open');
     });
     dd.addEventListener('mouseleave', function() {
-      t = setTimeout(function() { menu.classList.remove('open'); dd.classList.remove('open'); }, 3000);
+      t = setTimeout(function() { menu.classList.remove('open'); dd.classList.remove('open'); }, 1000);
     });
   }
 })();

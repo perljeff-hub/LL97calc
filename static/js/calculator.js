@@ -170,7 +170,7 @@ function updateEnergyCosts() {
     const usage = parseFloat(document.getElementById(f.inputId)?.value) || 0;
 
     if (priceEl) {
-      priceEl.textContent = price != null ? `$${price}${f.unit}` : '—';
+      priceEl.textContent = price != null ? `$${price.toFixed(2)}${f.unit}` : '—';
     }
     if (costEl) {
       if (price != null) {
