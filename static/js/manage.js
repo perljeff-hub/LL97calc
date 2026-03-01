@@ -116,6 +116,18 @@ async function loadScenarios(buildingName, results, state) {
     });
     bar.classList.remove('hidden');
 
+    // Check for scenario auto-select passed from Reduction Plan "See Scenario on Timeline"
+    const storedScenId = sessionStorage.getItem('ll97_rp_scenario_id');
+    let autoSelectId = null;
+    if (storedScenId) {
+      sessionStorage.removeItem('ll97_rp_scenario_id');
+      const targetId = parseInt(storedScenId, 10);
+      if ([...select.options].some(o => parseInt(o.value, 10) === targetId)) {
+        select.value = String(targetId);
+        autoSelectId = targetId;
+      }
+    }
+
     select.addEventListener('change', async () => {
       const scenarioId = parseInt(select.value, 10) || null;
       if (!scenarioId) {
@@ -147,6 +159,11 @@ async function loadScenarios(buildingName, results, state) {
         loadingEl.classList.add('hidden');
       }
     });
+
+    // Auto-trigger comparison chart for the pre-selected scenario
+    if (autoSelectId) {
+      select.dispatchEvent(new Event('change'));
+    }
   } catch (e) { /* scenarios optional */ }
 }
 
