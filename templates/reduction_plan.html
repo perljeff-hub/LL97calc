@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reduction Plan — NYC LL97 Calculator</title>
+  <title>Reduction Plan — NYC LL97 Planner</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
@@ -18,13 +18,12 @@
         <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
       </svg>
       <div>
-        <div class="header-title">NYC LL97 Calculator</div>
-        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+        <div class="header-title">NYC LL97 Planner</div>
+        <div class="header-sub">For calculating LL97 exposure and making a plan to reduce emissions.</div>
       </div>
+      <div id="active-building-nav" class="active-building-nav"></div>
     </div>
     <nav class="header-nav">
-      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
-      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link">Calculate</a>
       <!-- Manage dropdown — Reduction Plan is the active sub-item -->
       <div class="nav-dropdown" id="manage-nav-dropdown">
@@ -37,6 +36,7 @@
           <a href="/reduction-plan" class="nav-dropdown-item active">Reduction Plan</a>
         </div>
       </div>
+      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
@@ -68,11 +68,21 @@
       <div class="rp-scenario-left">
         <span class="rp-scenario-label">Scenario:</span>
         <select id="rp-scenario-select" class="rp-scenario-select"></select>
+        <button id="rp-rename-btn" class="btn btn-ghost btn-sm" title="Rename this scenario">✎ Rename</button>
+        <span id="rp-rename-form" class="rp-rename-form hidden">
+          <input type="text" id="rp-rename-input" class="form-input rp-rename-input" placeholder="New name" />
+          <button id="rp-rename-confirm" class="btn btn-primary btn-sm">OK</button>
+          <button id="rp-rename-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+          <span id="rp-rename-error" class="rp-inline-error hidden"></span>
+        </span>
         <button id="rp-see-timeline-btn" class="btn btn-ghost btn-sm" title="View this scenario on the Compliance Timeline">
           See Scenario on Timeline →
         </button>
       </div>
       <div class="rp-scenario-right">
+        <button id="rp-clear-all-btn" class="btn btn-ghost btn-sm" title="Remove all measures from this scenario's timeline">
+          ✕ Clear Timeline
+        </button>
         <button id="rp-suggest-btn" class="btn btn-secondary btn-sm" disabled title="Add at least one measure to enable Suggest a Plan">
           ✦ Suggest a Plan
         </button>
@@ -197,7 +207,7 @@
     <div id="rp-summary-section" class="card hidden">
       <h2 class="card-title">Scenario Summary</h2>
       <p class="card-desc">
-        Years with measures applied — one-time capital costs and annual energy savings from that year forward.
+        Years with measures applied — one-time capital costs, annual energy savings, and estimated annual cost/carbon savings from that year forward.
       </p>
       <div class="rp-summary-table-wrap">
         <table class="rp-summary-table" id="rp-summary-table">
@@ -211,6 +221,8 @@
               <th>Steam Savings <span class="th-unit">(mLbs)</span></th>
               <th>Oil #2 Savings <span class="th-unit">(gal)</span></th>
               <th>Oil #4 Savings <span class="th-unit">(gal)</span></th>
+              <th>Annual Cost Savings <span class="th-unit">($)</span></th>
+              <th>Annual Carbon Savings <span class="th-unit">(tCO₂e)</span></th>
             </tr>
           </thead>
           <tbody id="rp-summary-tbody"></tbody>
@@ -236,18 +248,23 @@
   try {
     const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
     if (a && a.saveName) {
-      const esc = a.saveName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const st = JSON.parse(sessionStorage.getItem('ll97_calc_state') || 'null');
+      const bd = st && st.buildingData ? st.buildingData : null;
+      const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      let tip = '<div class="abt-name">' + esc(bd && bd.property_name ? bd.property_name : a.saveName) + '</div>';
+      if (bd && bd.address) tip += '<div class="abt-row">' + esc(bd.address) + (bd.borough ? ', '+esc(bd.borough) : '') + (bd.postcode ? ' '+esc(bd.postcode) : '') + '</div>';
+      if (bd && bd.gross_floor_area) tip += '<div class="abt-row"><strong>' + Number(bd.gross_floor_area).toLocaleString('en-US') + '</strong> sq ft</div>';
+      if (bd && bd.energy_star_score) tip += '<div class="abt-row">ENERGY STAR: <strong>' + esc(bd.energy_star_score) + '</strong></div>';
       document.getElementById('active-building-nav').innerHTML =
-        '<span class="active-building-chip">' +
-        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
+        '<div class="active-building-chip-wrap">' +
+        '<span class="active-building-chip"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
         '<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>' +
-        '<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
-        '<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
-        '<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
-        '<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
         '<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
         '<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-        '</svg><span class="active-building-chip-name">' + esc + '</span></span>';
+        '</svg><span class="active-building-chip-name">' + esc(a.saveName) + '</span></span>' +
+        '<div class="active-building-tooltip">' + tip + '</div></div>';
     }
   } catch(e) {}
 })();

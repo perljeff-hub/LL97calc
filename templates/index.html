@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NYC LL97 Carbon Emissions Calculator</title>
+  <title>NYC LL97 Planner — Calculate</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
@@ -18,13 +18,12 @@
         <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
       </svg>
       <div>
-        <div class="header-title">NYC LL97 Calculator</div>
-        <div class="header-sub">Local Law 97 Carbon Emissions &amp; Penalty Estimator</div>
+        <div class="header-title">NYC LL97 Planner</div>
+        <div class="header-sub">For calculating LL97 exposure and making a plan to reduce emissions.</div>
       </div>
+      <div id="active-building-nav" class="active-building-nav"></div>
     </div>
     <nav class="header-nav">
-      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
-      <div id="active-building-nav" class="active-building-nav"></div>
       <a href="/" class="nav-link active">Calculate</a>
       <!-- Manage dropdown — disabled until a building is saved/loaded -->
       <div class="nav-dropdown disabled" id="manage-nav-dropdown" title="Save or Load a Saved Building to enable Manage">
@@ -37,6 +36,7 @@
           <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
         </div>
       </div>
+      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
@@ -44,22 +44,21 @@
 
 <main class="main-container">
 
-  <!-- ── BUILDING SEARCH ─────────────────────────────────────────────────── -->
+  <!-- ── BUILDING SEARCH + SELECTED ─────────────────────────────────────── -->
   <section class="card" id="search-section">
     <h2 class="card-title">Building Lookup <span class="badge badge-opt">Start Here</span></h2>
-    <p class="card-desc">Search the NYC LL84 benchmarking database by address, building name, BBL, or BIN auto-populate energy data. Or enter data manually below.</p>
+    <p class="card-desc">Search the NYC LL84 benchmarking database by address, building name, BBL, or BIN to auto-populate energy data. Or enter data manually below.</p>
     <div class="search-row">
       <input type="text" id="search-input" class="form-input" placeholder="e.g. 123 Main St, Empire State Building, BBL, or BIN" autocomplete="off" />
       <button class="btn btn-secondary" id="search-btn">Search</button>
     </div>
     <div id="search-results" class="search-results hidden"></div>
     <div id="db-status-msg" class="info-msg hidden"></div>
-  </section>
-
-  <!-- ── SELECTED BUILDING ────────────────────────────────────────────────── -->
-  <section class="card hidden" id="selected-building-section">
-    <h2 class="card-title">Selected Building</h2>
-    <div class="bldg-info-grid" id="bldg-info-grid"></div>
+    <!-- Selected Building (compact, shown inside same card) -->
+    <div id="selected-building-section" class="selected-building-compact hidden">
+      <div class="selected-building-divider"></div>
+      <div class="bldg-info-grid" id="bldg-info-grid"></div>
+    </div>
   </section>
 
   <!-- ── ENERGY INPUTS ────────────────────────────────────────────────────── -->

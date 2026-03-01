@@ -817,6 +817,22 @@ def get_scenario(scenario_id):
     })
 
 
+@app.route('/api/scenarios/<int:scenario_id>/rename', methods=['POST'])
+def rename_scenario(scenario_id):
+    data = request.get_json()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    conn = get_saved_db_connection()
+    conn.execute('UPDATE scenarios SET name = ? WHERE id = ?', (name, scenario_id))
+    conn.commit()
+    scenario = conn.execute('SELECT * FROM scenarios WHERE id = ?', (scenario_id,)).fetchone()
+    conn.close()
+    if not scenario:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'scenario': dict(scenario)})
+
+
 @app.route('/api/scenarios/save', methods=['POST'])
 def save_scenario():
     data               = request.get_json()
@@ -893,22 +909,25 @@ def scenario_compute():
 
     conn = get_saved_db_connection()
     placements = conn.execute('''
-        SELECT sm.year, m.cost,
+        SELECT sm.year, m.name, m.cost,
                m.elec_savings, m.gas_savings, m.steam_savings,
                m.oil2_savings, m.oil4_savings
         FROM scenario_measures sm
         JOIN measures m ON sm.measure_id = m.id
         WHERE sm.scenario_id = ?
+        ORDER BY sm.year, m.name
     ''', (scenario_id,)).fetchall()
     conn.close()
 
-    # Accumulate savings and measure costs per year
+    # Accumulate savings, measure costs, and measure names per year
     savings_by_year      = {}
     measure_cost_by_year = {}
+    measure_names_by_year = {}
     for p in placements:
         yr = p['year']
         if yr not in savings_by_year:
             savings_by_year[yr] = dict(elec=0, gas=0, steam=0, oil2=0, oil4=0)
+        measure_names_by_year.setdefault(yr, []).append(p['name'])
         savings_by_year[yr]['elec']  += (p['elec_savings']  or 0)
         savings_by_year[yr]['gas']   += (p['gas_savings']   or 0)
         savings_by_year[yr]['steam'] += (p['steam_savings'] or 0)
@@ -946,7 +965,8 @@ def scenario_compute():
             'limit':        round(limit, 4),
             'fine':         round(fine, 2),
             'energy_cost':  energy_costs,
-            'measure_cost': round(measure_cost_by_year.get(year, 0), 2),
+            'measure_cost':  round(measure_cost_by_year.get(year, 0), 2),
+            'measure_names': measure_names_by_year.get(year, []),
         })
 
     return jsonify({'yearly_data': yearly_data})

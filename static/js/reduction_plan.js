@@ -20,6 +20,23 @@ const FUEL_META = {
   oil4_savings:  {label: 'Oil #4',       unit: 'gal',    baseKey: 'fo4'},
 };
 
+// Maps each year 2024-2050 → compliance period key
+const PERIOD_FOR_YEAR = {};
+[['2024_2029',[2024,2025,2026,2027,2028,2029]],
+ ['2030_2034',[2030,2031,2032,2033,2034]],
+ ['2035_2039',[2035,2036,2037,2038,2039]],
+ ['2040_2049',[2040,2041,2042,2043,2044,2045,2046,2047,2048,2049]],
+ ['2050_plus',[2050]]].forEach(([p, yrs]) => yrs.forEach(y => PERIOD_FOR_YEAR[y] = p));
+
+// Savings baseKey → {priceKey (for settings/prices), efKey (for settings/current), kbtu}
+const FUEL_COST_MAP = {
+  elec:  {priceKey: 'electricity_kwh',    efKey: 'electricity_kwh',     kbtu: 1},
+  gas:   {priceKey: 'natural_gas_therm',  efKey: 'natural_gas_kbtu',    kbtu: 100},
+  steam: {priceKey: 'district_steam_mlb', efKey: 'district_steam_kbtu', kbtu: 1194},
+  fo2:   {priceKey: 'fuel_oil_2_gal',     efKey: 'fuel_oil_2_kbtu',     kbtu: 138.5},
+  fo4:   {priceKey: 'fuel_oil_4_gal',     efKey: 'fuel_oil_4_kbtu',     kbtu: 146.0},
+};
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 let currentBuilding   = '';
@@ -38,6 +55,10 @@ let _warnResolve = null;
 let editingMeasureId  = null;
 let isDirty           = false;       // unsaved timeline changes
 let baselineOccupancyGroups = null;  // occupancy groups from session state
+
+// Prices/emission factors for cost & carbon savings columns
+let pricesCfg    = null; // {electricity_kwh: {price, escalator}, natural_gas_therm: {...}, ...}
+let utilFactors  = null; // {2024_2029: {electricity_kwh: N, natural_gas_kbtu: N, ...}, ...}
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -70,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   try {
-    await Promise.all([loadMeasures(), loadScenarios()]);
+    await Promise.all([loadMeasures(), loadScenarios(), loadPricesAndFactors()]);
     buildTimeline();
     bindEventListeners();
     updateSuggestBtn();
@@ -139,6 +160,19 @@ async function loadScenarioPlacements(scenarioId) {
     }
   });
   markClean();
+}
+
+async function loadPricesAndFactors() {
+  try {
+    const [pr, ef] = await Promise.all([
+      fetch('/api/settings/prices').then(r => r.json()),
+      fetch('/api/settings/current').then(r => r.json()),
+    ]);
+    pricesCfg   = pr.prices   || {};
+    utilFactors = ef.current  || {};
+  } catch (_) {
+    // Non-fatal: cost/carbon savings columns will show '—'
+  }
 }
 
 // ── Build UI ──────────────────────────────────────────────────────────────────
@@ -588,6 +622,50 @@ function getPlacedIds() {
 
 // ── Summary table ─────────────────────────────────────────────────────────────
 
+// Compute escalated price for a fuel in a given year (base year = 2024)
+function escalatedPrice(priceKey, year) {
+  if (!pricesCfg || !pricesCfg[priceKey]) return null;
+  const {price, escalator} = pricesCfg[priceKey];
+  return price * Math.pow(1 + (escalator || 0) / 100, year - 2024);
+}
+
+// Compute annual cost savings for a set of fuel quantities at a given year
+function calcCostSavings(yr, year) {
+  if (!pricesCfg) return null;
+  let total = 0;
+  const fuelMap = {elec: 'electricity_kwh', gas: 'natural_gas_therm',
+                   steam: 'district_steam_mlb', fo2: 'fuel_oil_2_gal', fo4: 'fuel_oil_4_gal'};
+  Object.entries(fuelMap).forEach(([baseKey, priceKey]) => {
+    const savings = yr[baseKey === 'elec' ? 'elec' : baseKey === 'gas' ? 'gas' :
+                       baseKey === 'steam' ? 'steam' : baseKey === 'fo2' ? 'oil2' : 'oil4'];
+    if (savings) total += savings * (escalatedPrice(priceKey, year) || 0);
+  });
+  return total;
+}
+
+// Compute annual carbon savings for a set of fuel quantities at a given year
+function calcCarbonSavings(yr, year) {
+  if (!utilFactors) return null;
+  const period = PERIOD_FOR_YEAR[year] || '2050_plus';
+  const ef = utilFactors[period];
+  if (!ef) return null;
+  let total = 0;
+  // elec: savings_kwh × ef_kwh
+  total += (yr.elec  || 0) * (ef.electricity_kwh     || 0);
+  // gas: savings_therms × 100 kBtu/therm × ef_kbtu
+  total += (yr.gas   || 0) * 100   * (ef.natural_gas_kbtu    || 0);
+  // steam: savings_mLbs × 1194 kBtu/mLb × ef_kbtu
+  total += (yr.steam || 0) * 1194  * (ef.district_steam_kbtu || 0);
+  // oil2: savings_gal × 138.5 kBtu/gal × ef_kbtu
+  total += (yr.oil2  || 0) * 138.5 * (ef.fuel_oil_2_kbtu     || 0);
+  // oil4: savings_gal × 146.0 kBtu/gal × ef_kbtu
+  total += (yr.oil4  || 0) * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+  return total;
+}
+
+function fmtDollar(v) { return v != null && v > 0 ? '$' + Math.round(v).toLocaleString('en-US') : '—'; }
+function fmtCarbon(v) { return v != null && v > 0.005 ? fmtNum(v) : '—'; }
+
 function updateSummaryTable() {
   const section = document.getElementById('rp-summary-section');
   const tbody   = document.getElementById('rp-summary-tbody');
@@ -601,7 +679,7 @@ function updateSummaryTable() {
   section.classList.remove('hidden');
 
   tbody.innerHTML = '';
-  const totals = {cost: 0, elec: 0, gas: 0, steam: 0, oil2: 0, oil4: 0};
+  const totals = {cost: 0, elec: 0, gas: 0, steam: 0, oil2: 0, oil4: 0, costSav: 0, carbSav: 0};
 
   activeYears.forEach(year => {
     const ids = placements[year] || [];
@@ -616,7 +694,18 @@ function updateSummaryTable() {
       yr.oil2  += m.oil2_savings  || 0;
       yr.oil4  += m.oil4_savings  || 0;
     });
-    Object.keys(totals).forEach(k => totals[k] += yr[k]);
+
+    const costSav = calcCostSavings(yr, year);
+    const carbSav = calcCarbonSavings(yr, year);
+
+    totals.cost    += yr.cost;
+    totals.elec    += yr.elec;
+    totals.gas     += yr.gas;
+    totals.steam   += yr.steam;
+    totals.oil2    += yr.oil2;
+    totals.oil4    += yr.oil4;
+    if (costSav != null) totals.costSav += costSav;
+    if (carbSav != null) totals.carbSav += carbSav;
 
     const tr = document.createElement('tr');
     tr.innerHTML =
@@ -627,7 +716,9 @@ function updateSummaryTable() {
       `<td class="${yr.gas < 0 ? 'neg' : ''}">${yr.gas ? fmtNum(yr.gas) : '—'}</td>` +
       `<td class="${yr.steam < 0 ? 'neg' : ''}">${yr.steam ? fmtNum(yr.steam) : '—'}</td>` +
       `<td class="${yr.oil2 < 0 ? 'neg' : ''}">${yr.oil2 ? fmtNum(yr.oil2) : '—'}</td>` +
-      `<td class="${yr.oil4 < 0 ? 'neg' : ''}">${yr.oil4 ? fmtNum(yr.oil4) : '—'}</td>`;
+      `<td class="${yr.oil4 < 0 ? 'neg' : ''}">${yr.oil4 ? fmtNum(yr.oil4) : '—'}</td>` +
+      `<td>${fmtDollar(costSav)}</td>` +
+      `<td>${fmtCarbon(carbSav)}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -640,6 +731,7 @@ function updateSummaryTable() {
     `<td>${totals.steam ? fmtNum(totals.steam) : '—'}</td>` +
     `<td>${totals.oil2  ? fmtNum(totals.oil2)  : '—'}</td>` +
     `<td>${totals.oil4  ? fmtNum(totals.oil4)  : '—'}</td>` +
+    `<td colspan="2"></td>` +
     `</tr>`;
 }
 
@@ -806,17 +898,99 @@ async function saveScenario(asNew) {
   }
 }
 
+// ── Scenario rename ───────────────────────────────────────────────────────────
+
+function openRenameForm() {
+  const sel = document.getElementById('rp-scenario-select');
+  const form = document.getElementById('rp-rename-form');
+  const input = document.getElementById('rp-rename-input');
+  const errEl = document.getElementById('rp-rename-error');
+  // Pre-fill with current scenario name
+  const current = sel.options[sel.selectedIndex];
+  input.value = current ? current.textContent : '';
+  errEl.classList.add('hidden');
+  form.classList.remove('hidden');
+  document.getElementById('rp-rename-btn').classList.add('hidden');
+  input.focus();
+  input.select();
+}
+
+function closeRenameForm() {
+  document.getElementById('rp-rename-form').classList.add('hidden');
+  document.getElementById('rp-rename-btn').classList.remove('hidden');
+}
+
+async function confirmRename() {
+  const input = document.getElementById('rp-rename-input');
+  const errEl = document.getElementById('rp-rename-error');
+  const name  = (input.value || '').trim();
+  if (!name) {
+    errEl.textContent = 'Name is required.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  errEl.classList.add('hidden');
+
+  try {
+    const resp = await fetch(`/api/scenarios/${currentScenarioId}/rename`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({name}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Rename failed');
+
+    // Update select option and local scenarios array
+    const sel = document.getElementById('rp-scenario-select');
+    const opt = sel.options[sel.selectedIndex];
+    if (opt) opt.textContent = data.scenario.name;
+    const s = scenarios.find(x => x.id === currentScenarioId);
+    if (s) s.name = data.scenario.name;
+
+    closeRenameForm();
+    showToast('Scenario renamed');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+// ── Clear all placements ───────────────────────────────────────────────────────
+
+function clearAllPlacements() {
+  if (!Object.keys(placements).some(y => (placements[y] || []).length > 0)) return;
+  if (!confirm('Remove all measures from this scenario\'s timeline?')) return;
+  placements = {};
+  renderAllTimelineYears();
+  renderMeasuresList();
+  updateSummaryTable();
+  markDirty();
+}
+
 // ── Event listeners ───────────────────────────────────────────────────────────
 
 function bindEventListeners() {
   // Scenario selector
   document.getElementById('rp-scenario-select').addEventListener('change', async function() {
+    closeRenameForm();
     currentScenarioId = parseInt(this.value, 10);
     await loadScenarioPlacements(currentScenarioId);
     renderAllTimelineYears();
     renderMeasuresList();
     updateSummaryTable();
   });
+
+  // Rename scenario
+  document.getElementById('rp-rename-btn').addEventListener('click', openRenameForm);
+  document.getElementById('rp-rename-confirm').addEventListener('click', confirmRename);
+  document.getElementById('rp-rename-cancel').addEventListener('click', closeRenameForm);
+  document.getElementById('rp-rename-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmRename();
+    if (e.key === 'Escape') closeRenameForm();
+  });
+
+  // Clear all placements
+  document.getElementById('rp-clear-all-btn').addEventListener('click', clearAllPlacements);
 
   // Save button
   document.getElementById('rp-save-btn').addEventListener('click', () => saveScenario(false));

@@ -287,6 +287,19 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
         borderWidth: 2, fill: false, order: 6,
       },
     ];
+
+    // Implementation markers — dots on the scenario GHG line at years when measures are applied
+    const _implMeasureNames = scenarioData.map(d => d.measure_names || []);
+    datasets.push({
+      type: 'line', label: '_impl_markers',
+      data: scenarioData.map((d, i) =>
+        (d.measure_names && d.measure_names.length) ? scenEmissions[i] : null),
+      showLine: false, yAxisID: 'y',
+      pointRadius: scenarioData.map(d => (d.measure_names && d.measure_names.length) ? 8 : 0),
+      pointHoverRadius: scenarioData.map(d => (d.measure_names && d.measure_names.length) ? 10 : 0),
+      pointBackgroundColor: '#f39c12', pointBorderColor: '#fff', pointBorderWidth: 2,
+      order: 0, _measureNames: _implMeasureNames,
+    });
   } else {
     hasFine = cachedBaseFines.map(f => f > 0);
     let cum = 0;
@@ -331,10 +344,27 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'top', labels: { usePointStyle: true, padding: 18, font: { size: 12 } } },
+        legend: {
+          position: 'top',
+          labels: {
+            usePointStyle: true, padding: 18, font: { size: 12 },
+            filter: item => item.text !== '_impl_markers',
+          },
+        },
         tooltip: {
+          filter: item => {
+            if (item.dataset.label === '_impl_markers') {
+              const names = item.dataset._measureNames && item.dataset._measureNames[item.dataIndex];
+              return !!(names && names.length);
+            }
+            return true;
+          },
           callbacks: {
             label: ctx => {
+              if (ctx.dataset.label === '_impl_markers') {
+                const names = ctx.dataset._measureNames[ctx.dataIndex];
+                return `  \u2192 Measures: ${names.join(', ')}`;
+              }
               const v = ctx.parsed.y;
               return ctx.dataset.yAxisID === 'y2'
                 ? `  ${ctx.dataset.label}: $${v.toLocaleString('en-US')}`
