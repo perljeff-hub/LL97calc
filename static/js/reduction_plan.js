@@ -468,6 +468,12 @@ async function saveMeasureEdit(id) {
     oil4_savings:  parseFloat(document.getElementById('rp-edit-oil4').value)  || 0,
   };
 
+  // Warn if cost is $0
+  if (body.cost === 0) {
+    const ok = await showNoCostModal();
+    if (!ok) return;
+  }
+
   // Check for exceeded savings — ask user to confirm
   const confirmed = await validateSavingsObj(body);
   if (!confirmed) return;
@@ -1242,13 +1248,19 @@ function bindEventListeners() {
   }
 
   // Nav guard — show unsaved-changes modal before leaving with unsaved changes
+  // Also pass scenario ID to Timeline whenever navigating there
   document.querySelectorAll('.nav-link, .nav-dropdown-item').forEach(link => {
     link.addEventListener('click', e => {
-      if (!isDirty) return;
       const href = link.getAttribute('href');
       if (!href || href === '#' || href === window.location.pathname) return;
+      const goingToTimeline = href === '/manage';
+      // Always store scenario for Timeline nav (clean or dirty)
+      if (goingToTimeline && currentScenarioId) {
+        sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+      }
+      if (!isDirty) return;
       e.preventDefault();
-      showUnsavedModal(href, false);
+      showUnsavedModal(href, goingToTimeline);
     });
   });
 
