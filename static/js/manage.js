@@ -45,6 +45,45 @@ let cachedScenName       = '';
 let cachedScenId         = null;
 let showFuelDetail       = false;
 
+// ── CHART HTML TOOLTIP ────────────────────────────────────────────────────────
+
+function htmlTooltip({ chart, tooltip }) {
+  let el = chart.canvas.parentNode.querySelector('.chartjs-html-tooltip');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'chartjs-html-tooltip';
+    chart.canvas.parentNode.appendChild(el);
+  }
+  if (tooltip.opacity === 0) { el.style.opacity = 0; return; }
+
+  let html = '';
+  if (tooltip.title && tooltip.title.length) {
+    html += `<div class="cht-tt-title">${tooltip.title[0]}</div>`;
+  }
+  tooltip.dataPoints.forEach(dp => {
+    if (dp.dataset.label === '_impl_markers') {
+      const names = dp.dataset._measureNames && dp.dataset._measureNames[dp.dataIndex];
+      if (names && names.length) {
+        html += `<div class="cht-tt-measure">\u2192 Measures: <strong>${names.join(', ')}</strong></div>`;
+      }
+    } else {
+      const v = dp.parsed.y;
+      const val = dp.dataset.yAxisID === 'y2'
+        ? `$${v.toLocaleString('en-US')}`
+        : `${v.toLocaleString('en-US')} tCO\u2082e`;
+      const color = typeof dp.dataset.borderColor === 'string'
+        ? dp.dataset.borderColor
+        : (Array.isArray(dp.dataset.backgroundColor) ? '#888' : (dp.dataset.backgroundColor || '#888'));
+      html += `<div class="cht-tt-item"><span class="cht-tt-dot" style="background:${color}"></span>${dp.dataset.label}: ${val}</div>`;
+    }
+  });
+
+  el.innerHTML = html;
+  el.style.opacity = 1;
+  el.style.left = tooltip.caretX + 'px';
+  el.style.top  = tooltip.caretY + 'px';
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async function init() {
@@ -265,7 +304,7 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
       },
       // Scenario fine bars — orange, RIGHT
       {
-        type: 'bar', label: `${scenarioName} Fine`, data: scenFines,
+        type: 'bar', label: 'Scenario Fine', data: scenFines,
         backgroundColor: 'rgba(211,84,0,0.65)', borderColor: '#d35400',
         borderWidth: 1, yAxisID: 'y2', order: 5,
       },
@@ -278,7 +317,7 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
       },
       // Scenario GHG — red solid, on top
       {
-        type: 'line', label: `${scenarioName} GHG Emissions`, data: scenEmissions,
+        type: 'line', label: 'Scenario GHG Emissions', data: scenEmissions,
         borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.07)',
         yAxisID: 'y', tension: 0, pointRadius: 3, pointHoverRadius: 5,
         borderWidth: 2.5, fill: false, order: 1,
@@ -292,7 +331,7 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
       },
       // Scenario cumulative fine
       {
-        type: 'line', label: `${scenarioName} Cumulative Fine`, data: cumulativeFines,
+        type: 'line', label: 'Scenario Cumulative Fine', data: cumulativeFines,
         borderColor: '#8e44ad', backgroundColor: 'transparent', borderDash: [6,3],
         yAxisID: 'y2', tension: 0, pointRadius: 2, pointHoverRadius: 4,
         borderWidth: 2, fill: false, order: 6,
@@ -363,24 +402,14 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
           },
         },
         tooltip: {
+          enabled: false,
+          external: htmlTooltip,
           filter: item => {
             if (item.dataset.label === '_impl_markers') {
               const names = item.dataset._measureNames && item.dataset._measureNames[item.dataIndex];
               return !!(names && names.length);
             }
             return true;
-          },
-          callbacks: {
-            label: ctx => {
-              if (ctx.dataset.label === '_impl_markers') {
-                const names = ctx.dataset._measureNames[ctx.dataIndex];
-                return `  \u2192 Measures: ${names.join(', ')}`;
-              }
-              const v = ctx.parsed.y;
-              return ctx.dataset.yAxisID === 'y2'
-                ? `  ${ctx.dataset.label}: $${v.toLocaleString('en-US')}`
-                : `  ${ctx.dataset.label}: ${v.toLocaleString('en-US')} tCO₂e`;
-            },
           },
         },
       },

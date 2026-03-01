@@ -1027,6 +1027,35 @@ body {
   color: var(--gray-500);
   font-style: italic;
 }
+.manage-scenario-rp-link {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--blue-dark);
+  text-decoration: none;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.manage-scenario-rp-link:hover { text-decoration: underline; }
+
+/* Chart HTML tooltip */
+.chartjs-html-tooltip {
+  position: absolute;
+  background: rgba(0,0,0,.75);
+  color: #fff;
+  border-radius: 4px;
+  padding: 7px 11px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .1s;
+  transform: translate(-50%, calc(-100% - 10px));
+  white-space: nowrap;
+  z-index: 100;
+}
+.cht-tt-title { font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,.2); padding-bottom: 3px; }
+.cht-tt-item  { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.cht-tt-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.cht-tt-measure { font-weight: bold; line-height: 1.6; }
 
 /* ── MANAGE: financial summary table ────────────────────────────────────── */
 .fin-hdr {
@@ -1149,6 +1178,7 @@ body {
 
 /* Save split-button */
 .rp-save-group { display: inline-flex; align-items: stretch; position: relative; }
+.rp-save-dropdown-wrap { display: flex; align-items: stretch; }
 .rp-save-caret {
   padding: 0 .65rem;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -1428,9 +1458,9 @@ body {
 }
 .rp-measure-warn-flag[title] { cursor: help; }
 .rp-measure-warn-unused {
-  color: #0369a1;
-  background: #e0f2fe;
-  border-color: #7dd3fc;
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fbbf24;
 }
 .rp-measure-warn-nocost {
   color: #7c3aed;
