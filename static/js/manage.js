@@ -462,9 +462,8 @@ function buildFinancialTable() {
     <div>
       <h2 class="card-title">Financial Summary — Year by Year</h2>
       <p class="card-desc" style="margin-bottom:.5rem">
-        Annual energy costs at default prices
-        (electricity&nbsp;$0.15/kWh · nat.&nbsp;gas&nbsp;$1.50/therm · steam&nbsp;$18/mLb ·
-        oil&nbsp;#2&nbsp;$3.00/gal · oil&nbsp;#4&nbsp;$2.90/gal),
+        Annual energy costs calculated from energy prices and annual escalations found in
+        <a href="/settings">Settings</a>,
         LL97 fines${hasScen ? ', and one-time measure capital costs' : ''}.
       </p>
     </div>
