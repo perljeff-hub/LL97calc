@@ -1863,6 +1863,33 @@ body {
   background: var(--amber-light) !important;
 }
 
+/* ── CALCULATE PAGE: UNSAVED BUILDING BANNER ─────────────────────────────── */
+.cr-unsaved-banner {
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius);
+  padding: 1.1rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+.cr-unsaved-msg {
+  font-size: .9rem;
+  color: #78350f;
+  line-height: 1.5;
+}
+.cr-unsaved-msg strong { color: #92400e; }
+.cr-unsaved-save-row {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cr-unsaved-save-row .form-input {
+  max-width: 320px;
+  flex: 1 1 200px;
+}
+
 /* ── SAVE-TO-PORTFOLIO LINK ──────────────────────────────────────────────── */
 .save-portfolio-link {
   font-size: .85rem;

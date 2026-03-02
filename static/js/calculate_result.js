@@ -7,16 +7,22 @@ const ACTIVE_KEY  = 'll97_active';
 // ── INIT ───────────────────────────────────────────────────────────────────────
 (async function init() {
   const state = readState();
-  if (!state || !state.saveName) {
-    // No active building
+
+  // Need at least form data + occupancy to calculate; saveName not required
+  const hasData = state && state.form && state.occRows && state.occRows.length > 0;
+  if (!hasData) {
     document.getElementById('cr-loading').classList.add('hidden');
     document.getElementById('cr-no-building').classList.remove('hidden');
     return;
   }
 
-  // Restore active building chip
-  renderActiveBuildingChip(state);
-  syncNavState(state.saveName);
+  const isSaved = !!state.saveName;
+
+  // Restore active building chip and nav state
+  if (isSaved) {
+    renderActiveBuildingChip(state);
+    syncNavState(state.saveName);
+  }
 
   // Run baseline calculation
   try {
@@ -40,18 +46,25 @@ const ACTIVE_KEY  = 'll97_active';
     renderBaselineTitle(state);
     renderPeriods(data.results, 'cr-periods-grid');
 
-    // Check for selected scenario
-    const saveName = state.saveName;
-    try {
-      const bResp = await fetch(`/api/saved-buildings/${encodeURIComponent(saveName)}`);
-      if (bResp.ok) {
-        const bData = await bResp.json();
-        const building = bData.building;
-        if (building.selected_scenario_id) {
-          await renderScenarioCompliance(state, building.selected_scenario_id, building.year_ending);
+    // Show save CTA for unsaved buildings; hide RP button
+    if (!isSaved) {
+      document.getElementById('cr-rp-btn').classList.add('hidden');
+      document.getElementById('cr-unsaved-banner').classList.remove('hidden');
+    }
+
+    // Check for selected scenario (saved buildings only)
+    if (isSaved) {
+      try {
+        const bResp = await fetch(`/api/saved-buildings/${encodeURIComponent(state.saveName)}`);
+        if (bResp.ok) {
+          const bData = await bResp.json();
+          const building = bData.building;
+          if (building.selected_scenario_id) {
+            await renderScenarioCompliance(state, building.selected_scenario_id, building.year_ending);
+          }
         }
-      }
-    } catch (e) { /* non-fatal */ }
+      } catch (e) { /* non-fatal */ }
+    }
 
   } catch (e) {
     document.getElementById('cr-loading').classList.add('hidden');
@@ -232,6 +245,76 @@ function renderPeriods(results, gridId) {
     grid.appendChild(col);
   });
 }
+
+// ── SAVE UNSAVED BUILDING ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const saveBtn = document.getElementById('cr-save-btn');
+  const nameInput = document.getElementById('cr-save-name-input');
+  if (!saveBtn) return;
+  const doSave = async () => {
+    const name = (nameInput?.value || '').trim();
+    const errEl = document.getElementById('cr-save-error');
+    errEl.classList.add('hidden');
+    if (!name) {
+      errEl.textContent = 'Please enter a name.';
+      errEl.classList.remove('hidden');
+      nameInput?.focus();
+      return;
+    }
+    const state = readState();
+    const bd = state.buildingData || {};
+    const form = state.form || {};
+    const building = {
+      bbl:               bd.bbl               || '',
+      bin:               bd.bin               || '',
+      property_name:     bd.property_name     || '',
+      address:           bd.address           || '',
+      borough:           bd.borough           || '',
+      postcode:          bd.postcode          || '',
+      year_ending:       bd.year_ending       || '',
+      gross_floor_area:  bd.gross_floor_area  || null,
+      energy_star_score: bd.energy_star_score || '',
+      reported_ghg:      bd.reported_ghg      || null,
+      electricity_kwh:      parseFloat(form.elec)  || 0,
+      natural_gas_therms:   parseFloat(form.gas)   || 0,
+      district_steam_mlb:   parseFloat(form.steam) || 0,
+      fuel_oil_2_gal:       parseFloat(form.fo2)   || 0,
+      fuel_oil_4_gal:       parseFloat(form.fo4)   || 0,
+      occupancy_groups: (state.occRows || [])
+        .filter(r => r.type && parseFloat(r.area) > 0)
+        .map(r => ({ property_type: r.type, floor_area: parseFloat(r.area) })),
+    };
+    try {
+      const resp = await fetch('/api/save-building', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ save_name: name, overwrite: false, building }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        errEl.textContent = data.error === 'name_exists'
+          ? 'That name is already taken — please choose a different name.'
+          : (data.error || 'Save failed. Please try again.');
+        errEl.classList.remove('hidden');
+        return;
+      }
+      // Update localStorage with new saveName
+      const updated = { ...state, saveName: name };
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(updated)); } catch(e) {}
+      try { localStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: name })); } catch(e) {}
+      // Update UI: hide banner, show RP button, enable nav
+      document.getElementById('cr-unsaved-banner').classList.add('hidden');
+      document.getElementById('cr-rp-btn').classList.remove('hidden');
+      syncNavState(name);
+      renderActiveBuildingChip(updated);
+    } catch (e) {
+      errEl.textContent = 'Network error. Please try again.';
+      errEl.classList.remove('hidden');
+    }
+  };
+  saveBtn.addEventListener('click', doSave);
+  nameInput?.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+});
 
 // ── ACTIVE BUILDING CHIP ──────────────────────────────────────────────────────
 function renderActiveBuildingChip(state) {
