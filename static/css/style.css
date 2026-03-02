@@ -1725,75 +1725,92 @@ body {
   font-weight: 700;
   color: var(--blue-dark);
 }
-.pf-building-card { margin-bottom: 0; }
+/* Tighter card padding for portfolio */
+.pf-building-card.card { padding: 1rem 1.25rem; }
 .pf-card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: .75rem;
 }
-.pf-card-title { flex: 1; }
-.pf-bldg-name {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--blue-dark);
-  display: block;
-}
-.pf-bldg-prop {
-  font-size: .85rem;
-  color: var(--gray-700);
-  display: block;
-  margin-top: .1rem;
-}
-.pf-card-meta {
+.pf-card-identity {
   display: flex;
   flex-wrap: wrap;
-  gap: .25rem .75rem;
+  align-items: baseline;
+  gap: 0 .55rem;
+  flex: 1;
+  min-width: 0;
+}
+.pf-bldg-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--blue-dark);
+  white-space: nowrap;
+}
+.pf-bldg-prop {
   font-size: .82rem;
+  color: var(--gray-700);
+}
+.pf-bldg-meta {
+  font-size: .8rem;
   color: var(--gray-500);
-  margin-top: .35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pf-compliance-wrap {
   overflow-x: auto;
-  margin: 0 -1.5rem -1.5rem;
-  padding: 0 1.5rem 1.5rem;
+  margin: 0 -1.25rem -1rem;
+  padding: 0 1.25rem 1rem;
 }
 .pf-compliance-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: .85rem;
+  font-size: .83rem;
 }
-.pf-compliance-table th {
-  text-align: left;
-  padding: .5rem .75rem;
+/* Period column headers */
+.pf-row-th {
+  width: 90px;
   background: var(--gray-50);
   border-bottom: 2px solid var(--gray-200);
-  font-size: .75rem;
+}
+.pf-period-th {
+  text-align: center;
+  padding: .4rem .6rem;
+  background: var(--gray-50);
+  border-bottom: 2px solid var(--gray-200);
+  font-size: .73rem;
+  font-weight: 700;
   color: var(--gray-500);
   text-transform: uppercase;
   letter-spacing: .04em;
   white-space: nowrap;
 }
+/* Row label cell (Baseline / Scenario name) */
+.pf-row-label {
+  padding: .45rem .6rem;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  white-space: nowrap;
+  background: var(--gray-50);
+  border-right: 1px solid var(--gray-200);
+}
+.pf-scen-label { color: var(--blue-dark); }
+/* Data cells */
 .pf-compliance-table td {
-  padding: .5rem .75rem;
+  padding: .45rem .6rem;
+  text-align: center;
   border-bottom: 1px solid var(--gray-100);
 }
-.pf-compliance-table tr:last-child td { border-bottom: none; }
-.pf-compliant { background: transparent; }
-.pf-non-compliant { background: #fef2f2; }
-.pf-period-label { font-weight: 600; color: var(--gray-700); white-space: nowrap; }
-.pf-fine-ok { color: var(--green); font-weight: 600; }
-.pf-fine-bad { color: var(--red); font-weight: 600; }
-.pf-fine-better { color: #c07800; font-weight: 600; }
+.pf-baseline-row td { border-bottom: 1px solid var(--gray-200); }
+.pf-scen-row { background: #f8fbff; }
+.pf-scen-row td { border-bottom: none; }
+.pf-fine-ok     { color: var(--green); font-weight: 600; }
+.pf-fine-bad    { color: var(--red);   font-weight: 600; }
+.pf-fine-better { color: #c07800;      font-weight: 600; }
 .pf-no-data { color: var(--gray-500); font-size: .875rem; margin-top: .25rem; font-style: italic; }
-.pf-scenario-note {
-  font-size: .8rem;
-  color: var(--gray-500);
-  margin-top: .75rem;
-  padding-top: .6rem;
-  border-top: 1px solid var(--gray-200);
-}
 .pf-calc-link { white-space: nowrap; flex-shrink: 0; }
 
 /* ── CALCULATE RESULT PAGE ───────────────────────────────────────────────── */

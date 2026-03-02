@@ -74,19 +74,6 @@
       <div class="cr-summary-popup" id="cr-summary-popup"></div>
     </section>
 
-    <!-- Unsaved building — save CTA (hidden for saved buildings) -->
-    <div id="cr-unsaved-banner" class="cr-unsaved-banner hidden">
-      <div class="cr-unsaved-msg">
-        <strong>This building is not saved to your Portfolio.</strong>
-        Save it to create Reduction Plan scenarios and track fine exposure alongside your other buildings.
-      </div>
-      <div class="cr-unsaved-save-row">
-        <input type="text" class="form-input" id="cr-save-name-input" placeholder="Name this building…" autocomplete="off" />
-        <button class="btn btn-primary" id="cr-save-btn">Save to Portfolio</button>
-      </div>
-      <div id="cr-save-error" class="save-name-error hidden"></div>
-    </div>
-
     <!-- Action buttons -->
     <div class="cr-action-row">
       <a href="/reduction-plan" class="btn btn-secondary" id="cr-rp-btn">
@@ -109,6 +96,19 @@
         </div>
       </div>
     </section>
+
+    <!-- Unsaved building — save CTA (hidden for saved buildings) -->
+    <div id="cr-unsaved-banner" class="cr-unsaved-banner hidden">
+      <div class="cr-unsaved-msg">
+        <strong>This building is not saved to your Portfolio.</strong>
+        Save it to create Reduction Plan scenarios and track fine exposure alongside your other buildings.
+      </div>
+      <div class="cr-unsaved-save-row">
+        <input type="text" class="form-input" id="cr-save-name-input" placeholder="Name this building…" autocomplete="off" />
+        <button class="btn btn-primary" id="cr-save-btn">Save to Portfolio</button>
+      </div>
+      <div id="cr-save-error" class="save-name-error hidden"></div>
+    </div>
 
     <!-- Selected scenario compliance (shown only when a scenario is selected) -->
     <section class="card wide-card hidden" id="cr-scenario-card">

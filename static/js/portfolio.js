@@ -67,80 +67,88 @@ function buildBuildingCard(b) {
   const hasCompliance = b.compliance_cache && typeof b.compliance_cache === 'object';
   const hasScenario   = b.selected_scenario_compliance && typeof b.selected_scenario_compliance === 'object';
 
-  // Header row
+  // Compact header: name + inline meta + Open button
+  const metaParts = [];
+  const addrParts = [b.address, b.borough, b.postcode].filter(Boolean);
+  if (addrParts.length) metaParts.push(esc(addrParts.join(', ')));
+  if (b.gross_floor_area) metaParts.push(fmtNum(b.gross_floor_area) + ' sf');
+  if (b.year_ending) metaParts.push('Data: ' + String(b.year_ending).substring(0, 4));
+
   const header = document.createElement('div');
   header.className = 'pf-card-header';
   header.innerHTML = `
-    <div class="pf-card-title">
+    <div class="pf-card-identity">
       <span class="pf-bldg-name">${esc(b.save_name)}</span>
-      ${b.property_name ? `<span class="pf-bldg-prop">${esc(b.property_name)}</span>` : ''}
+      ${b.property_name && b.property_name !== b.save_name ? `<span class="pf-bldg-prop">${esc(b.property_name)}</span>` : ''}
+      ${metaParts.length ? `<span class="pf-bldg-meta">${metaParts.join(' · ')}</span>` : ''}
     </div>
-    <div class="pf-card-meta">
-      ${b.address ? `<span>${esc(b.address)}${b.borough ? ', ' + esc(b.borough) : ''}${b.postcode ? ' ' + esc(b.postcode) : ''}</span>` : ''}
-      ${b.gross_floor_area ? `<span>${fmtNum(b.gross_floor_area)} sf</span>` : ''}
-      ${b.year_ending ? `<span>Data year: ${String(b.year_ending).substring(0,4)}</span>` : ''}
-    </div>
-    <a href="#" class="btn btn-primary btn-sm pf-calc-link" data-name="${esc(b.save_name)}">Open in Calculate →</a>
+    <a href="#" class="btn btn-ghost btn-sm pf-calc-link" data-name="${esc(b.save_name)}">Open in Calculate →</a>
   `;
   card.appendChild(header);
 
-  // Compliance table
   if (hasCompliance) {
+    // Transposed table: periods as columns, Baseline + Scenario as rows
     const tableWrap = document.createElement('div');
     tableWrap.className = 'pf-compliance-wrap';
 
     const table = document.createElement('table');
     table.className = 'pf-compliance-table';
 
-    // Header
-    let thead = `<thead><tr><th>Period</th><th>Baseline Annual Fine</th>`;
-    if (hasScenario) {
-      thead += `<th>${esc(b.selected_scenario_name || 'Selected Scenario')}<br><small>Annual Fine</small></th>`;
-    }
-    thead += `</tr></thead>`;
-    table.innerHTML = thead;
+    // thead — period labels as columns
+    let headHtml = '<thead><tr><th class="pf-row-th"></th>';
+    COMPLIANCE_PERIODS.forEach(p => {
+      headHtml += `<th class="pf-period-th">${PERIOD_LABELS[p]}</th>`;
+    });
+    headHtml += '</tr></thead>';
+    table.innerHTML = headHtml;
 
     const tbody = document.createElement('tbody');
+
+    // Baseline row
+    const baseRow = document.createElement('tr');
+    baseRow.className = 'pf-baseline-row';
+    let baseHtml = '<td class="pf-row-label">Baseline</td>';
     COMPLIANCE_PERIODS.forEach(period => {
       const base = b.compliance_cache[period];
-      const scen = hasScenario ? b.selected_scenario_compliance[period] : null;
-      if (!base) return;
-
-      const tr = document.createElement('tr');
-      tr.className = base.compliant ? 'pf-compliant' : 'pf-non-compliant';
-
-      const baseLabel = base.penalty === 0 ? '<span class="pf-fine-ok">$0</span>' : `<span class="pf-fine-bad">${fmtDollars(base.penalty)}/yr</span>`;
-
-      let scenCell = '';
-      if (hasScenario && scen) {
-        const scenLabel = scen.penalty === 0
-          ? '<span class="pf-fine-ok">$0</span>'
-          : `<span class="${scen.penalty < base.penalty ? 'pf-fine-better' : 'pf-fine-bad'}">${fmtDollars(scen.penalty)}/yr</span>`;
-        scenCell = `<td>${scenLabel}</td>`;
-      }
-
-      tr.innerHTML = `
-        <td class="pf-period-label">${esc(PERIOD_LABELS[period] || period)}</td>
-        <td>${baseLabel}</td>
-        ${scenCell}
-      `;
-      tbody.appendChild(tr);
+      if (!base) { baseHtml += '<td>—</td>'; return; }
+      const cls = base.penalty === 0 ? 'pf-fine-ok' : 'pf-fine-bad';
+      baseHtml += `<td class="${cls}">${base.penalty === 0 ? '$0' : fmtDollars(base.penalty) + '/yr'}</td>`;
     });
+    baseRow.innerHTML = baseHtml;
+    tbody.appendChild(baseRow);
+
+    // Scenario row (only if a selected scenario exists)
+    if (hasScenario) {
+      const scenRow = document.createElement('tr');
+      scenRow.className = 'pf-scen-row';
+      const scenLabel = esc(b.selected_scenario_name || 'Selected Scenario');
+      let scenHtml = `<td class="pf-row-label pf-scen-label">&#x2605;&nbsp;${scenLabel}</td>`;
+      COMPLIANCE_PERIODS.forEach(period => {
+        const base = b.compliance_cache[period];
+        const scen = b.selected_scenario_compliance[period];
+        if (!scen) { scenHtml += '<td>—</td>'; return; }
+        let cls, text;
+        if (scen.penalty === 0) {
+          cls = 'pf-fine-ok'; text = '$0';
+        } else if (base && scen.penalty < base.penalty) {
+          cls = 'pf-fine-better'; text = fmtDollars(scen.penalty) + '/yr';
+        } else {
+          cls = 'pf-fine-bad'; text = fmtDollars(scen.penalty) + '/yr';
+        }
+        scenHtml += `<td class="${cls}">${text}</td>`;
+      });
+      scenRow.innerHTML = scenHtml;
+      tbody.appendChild(scenRow);
+    }
+
     table.appendChild(tbody);
     tableWrap.appendChild(table);
     card.appendChild(tableWrap);
   } else {
     const noData = document.createElement('p');
     noData.className = 'pf-no-data';
-    noData.textContent = 'Compliance data not yet calculated. Open in Calculate to generate.';
+    noData.textContent = 'No compliance data. Open in Calculate to generate.';
     card.appendChild(noData);
-  }
-
-  if (hasScenario) {
-    const scenNote = document.createElement('p');
-    scenNote.className = 'pf-scenario-note';
-    scenNote.innerHTML = `Selected scenario: <strong>${esc(b.selected_scenario_name || 'Unnamed')}</strong> — set on Reduction Plan page.`;
-    card.appendChild(scenNote);
   }
 
   // Wire up the "Open in Calculate" link
