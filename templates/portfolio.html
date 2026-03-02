@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio — NYC LL97 Planner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-left-group">
+      <div class="header-logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="8" fill="#1a5276"/>
+          <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="header-title">NYC LL97 Planner</div>
+          <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+        </div>
+      </div>
+      <nav class="header-nav-primary">
+        <a href="/portfolio" class="nav-link active">Portfolio</a>
+        <a href="/select-building" class="nav-link">Select Building</a>
+      </nav>
+    </div>
+    <nav class="header-nav">
+      <a href="/calculate" class="nav-link nav-link-disabled" id="calc-nav-link" title="Select a building to enable Calculate">Calculate</a>
+      <div class="nav-dropdown disabled" id="manage-nav-dropdown">
+        <a href="/manage" class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <div class="portfolio-header-row">
+    <h1 class="portfolio-page-title">Portfolio</h1>
+    <button class="btn btn-primary" id="pf-add-btn">+ Add a Building</button>
+  </div>
+
+  <div id="pf-loading" class="card manage-status-card">
+    <p class="manage-status-text">Loading portfolio…</p>
+  </div>
+  <div id="pf-empty" class="card manage-status-card hidden">
+    <p class="manage-status-text">
+      No saved buildings yet.
+      <button class="btn btn-primary btn-sm" id="pf-add-btn-empty">Add a Building</button>
+    </p>
+  </div>
+  <div id="pf-error" class="error-msg hidden" style="margin:0 0 1rem"></div>
+
+  <div id="pf-content" class="hidden">
+    <!-- Building cards injected by JS -->
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<script src="{{ url_for('static', filename='js/portfolio.js') }}"></script>
+<script>
+(function() {
+  // Restore active building chip + manage/calculate nav state
+  try {
+    const a = JSON.parse(localStorage.getItem('ll97_active') || 'null');
+    if (a && a.saveName) {
+      const st = JSON.parse(localStorage.getItem('ll97_calc_state') || 'null');
+      const bd = st && st.buildingData ? st.buildingData : null;
+      const e = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      let tip = '<div class="abt-name">' + e(bd && bd.property_name ? bd.property_name : a.saveName) + '</div>';
+      if (bd && bd.address) tip += '<div class="abt-row">' + e(bd.address) + (bd.borough ? ', '+e(bd.borough) : '') + (bd.postcode ? ' '+e(bd.postcode) : '') + '</div>';
+      if (bd && bd.gross_floor_area) tip += '<div class="abt-row"><strong>' + Number(bd.gross_floor_area).toLocaleString('en-US') + '</strong> sq ft</div>';
+      document.getElementById('active-building-nav').innerHTML =
+        '<div class="active-building-chip-wrap">' +
+        '<span class="active-building-chip"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">' +
+        '<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>' +
+        '<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/><rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>' +
+        '<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
+        '<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+        '</svg><span class="active-building-chip-name">' + e(a.saveName) + '</span></span>' +
+        '<div class="active-building-tooltip">' + tip + '</div></div>';
+      // Enable Calculate + Manage nav
+      const calcLink = document.getElementById('calc-nav-link');
+      if (calcLink) { calcLink.classList.remove('nav-link-disabled'); calcLink.removeAttribute('title'); }
+      const dd = document.getElementById('manage-nav-dropdown');
+      const btn = document.getElementById('manage-nav-btn');
+      if (dd) { dd.classList.remove('disabled'); dd.removeAttribute('title'); }
+      if (btn) { btn.classList.remove('nav-link-disabled'); }
+    }
+  } catch(e) {}
+  // Nav dropdown hover
+  (function() {
+    var dd = document.getElementById('manage-nav-dropdown');
+    var menu = document.getElementById('manage-nav-menu');
+    if (!dd || !menu) return;
+    var t = null;
+    dd.addEventListener('mouseenter', function() {
+      if (dd.classList.contains('disabled')) return;
+      if (t) { clearTimeout(t); t = null; }
+      menu.classList.add('open'); dd.classList.add('open');
+    });
+    dd.addEventListener('mouseleave', function() {
+      t = setTimeout(function() { menu.classList.remove('open'); dd.classList.remove('open'); }, 1000);
+    });
+  })();
+})();
+</script>
+</body>
+</html>

@@ -48,14 +48,15 @@ const FUEL_COST_MAP = {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let currentBuilding   = '';
-let measures          = [];   // [{id, name, cost, elec_savings, ...}]
-let scenarios         = [];   // [{id, name, number}]
-let currentScenarioId = null;
+let currentBuilding      = '';
+let measures             = [];   // [{id, name, cost, elec_savings, ...}]
+let scenarios            = [];   // [{id, name, number}]
+let currentScenarioId    = null;
+let selectedScenarioId   = null; // The "starred" scenario for this building
 // placements: year (number) → [measureId, ...]
-let placements        = {};
+let placements           = {};
 // Baseline energy usage from localStorage (may be null if not loaded)
-let baselineEnergy    = null; // {elec, gas, steam, fo2, fo4} — all numbers
+let baselineEnergy       = null; // {elec, gas, steam, fo2, fo4} — all numbers
 
 // Warning modal promise resolver
 let _warnResolve = null;
@@ -133,6 +134,7 @@ async function loadScenarios() {
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error || 'Failed to load scenarios');
   scenarios = data.scenarios || [];
+  selectedScenarioId = data.selected_scenario_id || null;
 
   // Auto-create Scenario 1 if none exist
   if (!scenarios.length) {
@@ -151,7 +153,7 @@ async function loadScenarios() {
   scenarios.forEach(s => {
     const opt     = document.createElement('option');
     opt.value     = s.id;
-    opt.textContent = s.name;
+    opt.textContent = s.name + (s.is_selected ? ' ★' : '');
     sel.appendChild(opt);
   });
 
@@ -165,8 +167,21 @@ async function loadScenarios() {
   }
   sel.value = currentScenarioId;
 
+  updateStarButton();
+
   // Load current scenario's placements
   await loadScenarioPlacements(currentScenarioId);
+}
+
+function updateStarButton() {
+  const btn = document.getElementById('rp-star-btn');
+  if (!btn) return;
+  const isSelected = (currentScenarioId === selectedScenarioId);
+  btn.innerHTML = isSelected ? '&#9733;' : '&#9734;';
+  btn.title = isSelected
+    ? 'This is the Selected Scenario — click to unstar'
+    : 'Mark as Selected Scenario for this building';
+  btn.classList.toggle('rp-star-active', isSelected);
 }
 
 async function loadScenarioPlacements(scenarioId) {
@@ -1240,6 +1255,7 @@ async function saveScenario(asNew) {
 
     if (asNew) {
       // Add new scenario to list & select it
+      data.scenario.is_selected = false;
       scenarios.push(data.scenario);
       const sel = document.getElementById('rp-scenario-select');
       const opt = document.createElement('option');
@@ -1248,6 +1264,7 @@ async function saveScenario(asNew) {
       sel.appendChild(opt);
       currentScenarioId = data.scenario.id;
       sel.value = currentScenarioId;
+      updateStarButton();
     }
 
     statusEl.textContent = 'Saved \u2713';
@@ -1279,7 +1296,7 @@ function openRenameModal() {
   const current = sel.options[sel.selectedIndex];
   const input = document.getElementById('rp-rename-input');
   const errEl = document.getElementById('rp-rename-error');
-  input.value = current ? current.textContent : '';
+  input.value = current ? current.textContent.replace(/\s*★$/, '') : '';
   errEl.classList.add('hidden');
   document.getElementById('rp-rename-backdrop').classList.remove('hidden');
   input.focus();
@@ -1312,7 +1329,7 @@ async function confirmRename() {
 
     const sel = document.getElementById('rp-scenario-select');
     const opt = sel.options[sel.selectedIndex];
-    if (opt) opt.textContent = data.scenario.name;
+    if (opt) opt.textContent = data.scenario.name + (currentScenarioId === selectedScenarioId ? ' ★' : '');
     const s = scenarios.find(x => x.id === currentScenarioId);
     if (s) s.name = data.scenario.name;
 
@@ -1392,10 +1409,44 @@ function bindEventListeners() {
   document.getElementById('rp-scenario-select').addEventListener('change', async function() {
     closePencilMenu();
     currentScenarioId = parseInt(this.value, 10);
+    updateStarButton();
     await loadScenarioPlacements(currentScenarioId);
     renderAllTimelineYears();
     renderMeasuresList();
     updateSummaryTable();
+  });
+
+  // Star/select scenario button
+  document.getElementById('rp-star-btn').addEventListener('click', async () => {
+    const newSelectedId = (currentScenarioId === selectedScenarioId) ? null : currentScenarioId;
+    try {
+      const resp = await fetch(`/api/buildings/${encodeURIComponent(currentBuilding)}/select-scenario`, {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body:    JSON.stringify({scenario_id: newSelectedId}),
+      });
+      if (resp.ok) {
+        selectedScenarioId = newSelectedId;
+        // Re-render the dropdown to show star indicators
+        const sel = document.getElementById('rp-scenario-select');
+        const currentVal = sel.value;
+        sel.innerHTML = '';
+        scenarios.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name + (s.id === selectedScenarioId ? ' ★' : '');
+          sel.appendChild(opt);
+        });
+        sel.value = currentVal;
+        updateStarButton();
+        const msg = newSelectedId
+          ? 'Scenario marked as Selected — it will appear on Calculate and Portfolio.'
+          : 'Selected Scenario cleared.';
+        showSaveStatus(msg);
+      }
+    } catch (e) {
+      showSaveStatus('Could not update selected scenario.', true);
+    }
   });
 
   // Pencil dropdown
@@ -1638,6 +1689,14 @@ function showToast(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => { t.classList.add('fade-out'); setTimeout(() => t.remove(), 700); }, 2000);
+}
+
+function showSaveStatus(msg, isError = false) {
+  const statusEl = document.getElementById('rp-save-status');
+  if (!statusEl) return;
+  statusEl.textContent = msg;
+  statusEl.className = 'rp-save-status ' + (isError ? 'rp-save-error' : 'rp-save-ok');
+  setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'rp-save-status'; }, 4000);
 }
 
 function showNoBuilding() {

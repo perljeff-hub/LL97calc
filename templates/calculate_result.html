@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculate — NYC LL97 Planner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-left-group">
+      <div class="header-logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="8" fill="#1a5276"/>
+          <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="header-title">NYC LL97 Planner</div>
+          <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+        </div>
+      </div>
+      <nav class="header-nav-primary">
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/select-building" class="nav-link">Select Building</a>
+      </nav>
+    </div>
+    <nav class="header-nav">
+      <a href="/calculate" class="nav-link active" id="calc-nav-link">Calculate</a>
+      <div class="nav-dropdown" id="manage-nav-dropdown">
+        <a href="/manage" class="nav-link nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <!-- No active building -->
+  <div id="cr-no-building" class="card manage-status-card hidden">
+    <p class="manage-status-text">
+      No building selected. Please <a href="/select-building">select a building</a> first.
+    </p>
+  </div>
+
+  <!-- Loading -->
+  <div id="cr-loading" class="card manage-status-card">
+    <p class="manage-status-text">Calculating compliance…</p>
+  </div>
+
+  <!-- Error -->
+  <div id="cr-error" class="error-msg hidden" style="margin:0 0 1rem"></div>
+
+  <!-- ── MAIN CONTENT ─────────────────────────────────────────────────────── -->
+  <div id="cr-main" class="hidden">
+
+    <!-- Building Summary -->
+    <section class="card cr-building-summary" id="cr-building-summary">
+      <div class="cr-summary-line1" id="cr-summary-line1"></div>
+      <div class="cr-summary-line2" id="cr-summary-line2"></div>
+      <!-- Mouseover popup -->
+      <div class="cr-summary-popup" id="cr-summary-popup"></div>
+    </section>
+
+    <!-- Action buttons -->
+    <div class="cr-action-row">
+      <a href="/reduction-plan" class="btn btn-secondary" id="cr-rp-btn">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2 14V2h12v12H2z" stroke="currentColor" stroke-width="1.4" fill="none" rx="1"/>
+          <path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Create/Edit Reduction Plan Scenarios
+      </a>
+      <a href="/select-building" class="btn btn-ghost btn-sm">← Change Building</a>
+    </div>
+
+    <!-- Baseline compliance -->
+    <section class="card wide-card" id="cr-baseline-card">
+      <h2 class="card-title" id="cr-baseline-title">LL97 Compliance by Period</h2>
+      <p class="card-desc">Annual GHG emissions vs. building limit for each compliance period. Penalty = $268/tCO₂e over limit.<span class="help-icon" tabindex="0" role="note" data-tip="tCO₂e = metric tons of CO₂ equivalent. LL97 penalizes $268 per tCO₂e that a building emits above its annual limit.">i</span></p>
+      <div class="periods-wrapper">
+        <div class="periods-scroll">
+          <div class="periods-grid" id="cr-periods-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Selected scenario compliance (shown only when a scenario is selected) -->
+    <section class="card wide-card hidden" id="cr-scenario-card">
+      <div class="cr-scenario-header">
+        <div>
+          <h2 class="card-title">LL97 Compliance by Period — Selected Reduction Plan Scenario</h2>
+          <p class="card-desc" id="cr-scenario-desc">Fines with the selected scenario applied.</p>
+        </div>
+        <a href="/manage" id="cr-timeline-link" class="btn btn-ghost btn-sm">View on Timeline →</a>
+      </div>
+      <div class="periods-wrapper">
+        <div class="periods-scroll">
+          <div class="periods-grid" id="cr-scenario-grid"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /#cr-main -->
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<script>
+window.COMPLIANCE_PERIODS = {{ compliance_periods | tojson }};
+window.PERIOD_LABELS      = {{ period_labels | tojson }};
+</script>
+<script>
+// Nav dropdown — show on hover
+(function() {
+  var dd = document.getElementById('manage-nav-dropdown');
+  var menu = document.getElementById('manage-nav-menu');
+  if (!dd || !menu) return;
+  var timer = null;
+  dd.addEventListener('mouseenter', function() {
+    if (dd.classList.contains('disabled')) return;
+    if (timer) { clearTimeout(timer); timer = null; }
+    menu.classList.add('open'); dd.classList.add('open');
+  });
+  dd.addEventListener('mouseleave', function() {
+    timer = setTimeout(function() {
+      menu.classList.remove('open'); dd.classList.remove('open');
+    }, 1000);
+  });
+})();
+</script>
+<script src="{{ url_for('static', filename='js/calculate_result.js') }}"></script>
+</body>
+</html>

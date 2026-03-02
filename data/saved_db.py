@@ -38,9 +38,17 @@ def create_saved_tables(conn):
             fuel_oil_2_gal      REAL,
             fuel_oil_4_gal      REAL,
             occupancy_groups    TEXT,
-            reported_ghg        REAL
+            reported_ghg        REAL,
+            selected_scenario_id INTEGER DEFAULT NULL,
+            compliance_cache    TEXT    DEFAULT NULL
         )
     ''')
+    # Migrate: add new columns if the table already exists without them
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(saved_buildings)").fetchall()}
+    if 'selected_scenario_id' not in existing_cols:
+        conn.execute('ALTER TABLE saved_buildings ADD COLUMN selected_scenario_id INTEGER DEFAULT NULL')
+    if 'compliance_cache' not in existing_cols:
+        conn.execute('ALTER TABLE saved_buildings ADD COLUMN compliance_cache TEXT DEFAULT NULL')
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_save_name ON saved_buildings(save_name)'
     )

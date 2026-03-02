@@ -156,10 +156,11 @@ async function loadScenarios(buildingName, results, state) {
     });
     bar.classList.remove('hidden');
 
-    // Check for scenario auto-select passed from Reduction Plan "See Scenario on Timeline"
-    const storedScenId = localStorage.getItem('ll97_rp_scenario_id');
+    // Check for scenario auto-select passed from Calculate page or Reduction Plan
+    const storedScenId = localStorage.getItem('ll97_timeline_scenario_id') || localStorage.getItem('ll97_rp_scenario_id');
     let autoSelectId = null;
     if (storedScenId) {
+      localStorage.removeItem('ll97_timeline_scenario_id');
       localStorage.removeItem('ll97_rp_scenario_id');
       const targetId = parseInt(storedScenId, 10);
       if ([...select.options].some(o => parseInt(o.value, 10) === targetId)) {
