@@ -563,9 +563,108 @@ def get_portfolio():
             except Exception:
                 pass
 
+        # Fill in missing compliance_cache from stored building data
+        if b['compliance_cache'] is None:
+            occ = b['occupancy_groups']
+            energy = {
+                'electricity_kwh':    b.get('electricity_kwh')    or 0,
+                'natural_gas_therms': b.get('natural_gas_therms') or 0,
+                'district_steam_mlb': b.get('district_steam_mlb') or 0,
+                'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+                'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+            }
+            if occ and any(v > 0 for v in energy.values()):
+                try:
+                    cache = _compute_building_compliance(energy, occ)
+                    b['compliance_cache'] = cache
+                    conn.execute(
+                        'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+                        (json.dumps(cache), b['save_name'])
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+
         buildings.append(b)
     conn.close()
     return jsonify({'buildings': buildings})
+
+
+@app.route('/api/portfolio/recalculate-all', methods=['POST'])
+def recalculate_portfolio():
+    """Recompute compliance_cache for every building from its stored energy/occupancy data."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'status': 'ok', 'updated': 0})
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    rows = conn.execute('SELECT * FROM saved_buildings').fetchall()
+    updated = 0
+    for row in rows:
+        b = dict(row)
+        try:
+            occ = json.loads(b.get('occupancy_groups') or '[]')
+        except Exception:
+            occ = []
+        energy = {
+            'electricity_kwh':    b.get('electricity_kwh')    or 0,
+            'natural_gas_therms': b.get('natural_gas_therms') or 0,
+            'district_steam_mlb': b.get('district_steam_mlb') or 0,
+            'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+            'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+        }
+        if occ and any(v > 0 for v in energy.values()):
+            try:
+                cache = _compute_building_compliance(energy, occ)
+                conn.execute(
+                    'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+                    (json.dumps(cache), b['save_name'])
+                )
+                updated += 1
+            except Exception:
+                pass
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok', 'updated': updated})
+
+
+@app.route('/api/buildings/<path:name>/refresh-compliance', methods=['POST'])
+def refresh_building_compliance(name):
+    """Recompute and save compliance_cache for one building from its stored data."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    row = conn.execute('SELECT * FROM saved_buildings WHERE save_name = ?', (name,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    b = dict(row)
+    try:
+        occ = json.loads(b.get('occupancy_groups') or '[]')
+    except Exception:
+        occ = []
+    energy = {
+        'electricity_kwh':    b.get('electricity_kwh')    or 0,
+        'natural_gas_therms': b.get('natural_gas_therms') or 0,
+        'district_steam_mlb': b.get('district_steam_mlb') or 0,
+        'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+        'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+    }
+    if not occ or not any(v > 0 for v in energy.values()):
+        conn.close()
+        return jsonify({'error': 'Insufficient data'}), 400
+    try:
+        cache = _compute_building_compliance(energy, occ)
+        conn.execute(
+            'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+            (json.dumps(cache), name)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok', 'compliance_cache': cache})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/scenario-period-compliance', methods=['POST'])

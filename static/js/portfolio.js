@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', function() {
   loadPortfolio();
 });
 
+const PF_SESSION_KEY = 'pf_session_refreshed';
+
 function addBuilding() {
   // Clear active building and navigate to Select Building
   try {
@@ -33,6 +35,12 @@ function addBuilding() {
 
 async function loadPortfolio() {
   try {
+    // On first visit in a session, force-recompute all compliance caches
+    // so the portfolio reflects current building data and GHG factor settings
+    if (!sessionStorage.getItem(PF_SESSION_KEY)) {
+      sessionStorage.setItem(PF_SESSION_KEY, '1');
+      await fetch('/api/portfolio/recalculate-all', { method: 'POST' });
+    }
     const resp = await fetch('/api/portfolio');
     const data = await resp.json();
     document.getElementById('pf-loading').classList.add('hidden');

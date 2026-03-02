@@ -52,6 +52,14 @@ const ACTIVE_KEY  = 'll97_active';
       document.getElementById('cr-unsaved-banner').classList.remove('hidden');
     }
 
+    // For saved buildings: refresh the compliance cache in the DB so
+    // the Portfolio page reflects the latest calculation
+    if (isSaved) {
+      fetch(`/api/buildings/${encodeURIComponent(state.saveName)}/refresh-compliance`, {
+        method: 'POST',
+      }).catch(() => {}); // fire-and-forget, non-fatal
+    }
+
     // Check for selected scenario (saved buildings only)
     if (isSaved) {
       try {
