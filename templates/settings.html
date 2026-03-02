@@ -61,7 +61,7 @@
             <th>Fuel / Energy</th>
             <th>Unit</th>
             <th>Base Price (2024)</th>
-            <th>Annual Escalator (%)</th>
+            <th>Annual Escalator (%)<span class="help-icon" tabindex="0" role="note" data-tip="Each year's price compounds from the prior year. E.g. at 3%, the 2026 price = 2025 price × 1.03. Used to project future energy costs on the Timeline.">i</span></th>
           </tr>
         </thead>
         <tbody id="prices-tbody">
@@ -343,12 +343,12 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
   setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 3000);
 });
 
-// ── Active Building nav chip + Manage link (read from sessionStorage) ──────
+// ── Active Building nav chip + Manage link (read from localStorage) ──────
 (function() {
   try {
-    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    const a = JSON.parse(localStorage.getItem('ll97_active') || 'null');
     if (a && a.saveName) {
-      const st = JSON.parse(sessionStorage.getItem('ll97_calc_state') || 'null');
+      const st = JSON.parse(localStorage.getItem('ll97_calc_state') || 'null');
       const bd = st && st.buildingData ? st.buildingData : null;
       const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       let tip = '<div class="abt-name">' + esc(bd && bd.property_name ? bd.property_name : a.saveName) + '</div>';

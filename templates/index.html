@@ -91,7 +91,7 @@
         </div>
 
         <div class="eu-row">
-          <label class="eu-label" for="steam">District Steam <span class="unit">(Mlb)</span></label>
+          <label class="eu-label" for="steam">District Steam <span class="unit">(Mlb)</span><span class="help-icon" tabindex="0" role="note" data-tip="Mlb = thousand pounds of steam. Con Edison district steam is reported in Mlbs in ESPM and LL84 benchmarking data.">i</span></label>
           <input type="number" id="steam" class="form-input eu-input" min="0" placeholder="0" step="0.001" />
           <span class="eu-price" id="eu-price-steam">—</span>
           <span class="eu-cost" id="eu-cost-steam"></span>
@@ -122,7 +122,7 @@
     <section class="card" id="occupancy-section">
       <h2 class="card-title">Building Occupancy &amp; Floor Area</h2>
       <p class="card-desc">
-        Select up to 4 ESPM property types and enter the gross floor area for each.
+        Select up to 4 ESPM property types<span class="help-icon" tabindex="0" role="note" data-tip="ESPM = Energy Star Portfolio Manager. LL97 uses ESPM property types (not NYC Building Code occupancy groups) to determine your building's emission intensity limit. Required for compliance reporting from 2026 onward.">i</span> and enter the gross floor area for each.
         The total floor area of all entries should equal the building's total gross floor area.
         <br><em>Note: From 2026 onward, LL97 requires ESPM property types (not NYC Building Code occupancy groups).</em>
       </p>
@@ -149,7 +149,7 @@
     <!-- Emissions Results (one column per period) -->
     <section class="card wide-card" id="periods-card">
       <h2 class="card-title">LL97 Compliance by Period</h2>
-      <p class="card-desc">Annual GHG emissions vs. building limit for each compliance period. Penalty = $268/tCO₂e over limit.</p>
+      <p class="card-desc">Annual GHG emissions vs. building limit for each compliance period. Penalty = $268/tCO₂e over limit.<span class="help-icon" tabindex="0" role="note" data-tip="tCO₂e = metric tons of CO₂ equivalent. LL97 penalizes $268 per tCO₂e that a building emits above its annual limit. Limits tighten with each compliance period.">i</span></p>
       <div class="periods-wrapper">
         <div class="periods-scroll">
           <div class="periods-grid" id="periods-grid"></div>

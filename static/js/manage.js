@@ -89,7 +89,7 @@ function htmlTooltip({ chart, tooltip }) {
 document.addEventListener('DOMContentLoaded', async function init() {
   let state;
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) { showNoBuilding(); return; }
     state = JSON.parse(raw);
     if (!state.saveName) { showNoBuilding(); return; }
@@ -157,10 +157,10 @@ async function loadScenarios(buildingName, results, state) {
     bar.classList.remove('hidden');
 
     // Check for scenario auto-select passed from Reduction Plan "See Scenario on Timeline"
-    const storedScenId = sessionStorage.getItem('ll97_rp_scenario_id');
+    const storedScenId = localStorage.getItem('ll97_rp_scenario_id');
     let autoSelectId = null;
     if (storedScenId) {
-      sessionStorage.removeItem('ll97_rp_scenario_id');
+      localStorage.removeItem('ll97_rp_scenario_id');
       const targetId = parseInt(storedScenId, 10);
       if ([...select.options].some(o => parseInt(o.value, 10) === targetId)) {
         select.value = String(targetId);
@@ -211,7 +211,7 @@ async function loadScenarios(buildingName, results, state) {
   document.querySelectorAll('a[href="/reduction-plan"]').forEach(link => {
     link.addEventListener('click', () => {
       if (cachedScenId) {
-        sessionStorage.setItem('ll97_timeline_scenario_id', String(cachedScenId));
+        localStorage.setItem('ll97_timeline_scenario_id', String(cachedScenId));
       }
     });
   });

@@ -1612,5 +1612,66 @@ body {
 .rp-suggest-status.error-msg { margin-top: .25rem; }
 .rp-suggest-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 
+/* ── HELP ICON TOOLTIP ───────────────────────────────────────────────────── */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gray-200);
+  color: var(--gray-600);
+  font-size: .68rem;
+  font-weight: 700;
+  font-style: normal;
+  cursor: help;
+  position: relative;
+  vertical-align: middle;
+  margin-left: 4px;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  user-select: none;
+}
+.help-icon::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: .775rem;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: .45rem .65rem;
+  border-radius: 5px;
+  width: 240px;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 200;
+  white-space: normal;
+  box-shadow: 0 3px 10px rgba(0,0,0,.25);
+}
+.help-icon:hover::after,
+.help-icon:focus::after { opacity: 1; }
+.help-icon:focus { outline: 2px solid var(--blue-mid); outline-offset: 1px; }
+
+/* ── SCENARIO INSIGHT BANNER ────────────────────────────────────────────── */
+.rp-scenario-insight {
+  padding: .7rem 1rem;
+  background: #eef6fb;
+  border-left: 3px solid var(--blue-mid);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .875rem;
+  color: var(--gray-900);
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
+
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

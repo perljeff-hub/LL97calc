@@ -207,6 +207,7 @@
     <!-- Summary table -->
     <div id="rp-summary-section" class="card hidden">
       <h2 class="card-title">Scenario Summary</h2>
+      <div id="rp-scenario-insight" class="rp-scenario-insight hidden"></div>
       <p class="card-desc">
         Years with measures applied — one-time capital costs, annual energy savings, and estimated annual cost/carbon savings from that year forward.
       </p>
@@ -247,9 +248,9 @@
 <script>
 (function() {
   try {
-    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    const a = JSON.parse(localStorage.getItem('ll97_active') || 'null');
     if (a && a.saveName) {
-      const st = JSON.parse(sessionStorage.getItem('ll97_calc_state') || 'null');
+      const st = JSON.parse(localStorage.getItem('ll97_calc_state') || 'null');
       const bd = st && st.buildingData ? st.buildingData : null;
       const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       let tip = '<div class="abt-name">' + esc(bd && bd.property_name ? bd.property_name : a.saveName) + '</div>';
