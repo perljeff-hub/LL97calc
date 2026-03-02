@@ -24,8 +24,8 @@ const EU_FUELS = [
   { inputId: 'fo4',   priceKey: 'fuel_oil_4_gal',     unit: '/gal',   priceElId: 'eu-price-fo4',   costElId: 'eu-cost-fo4'   },
 ];
 
-const SESSION_KEY = 'll97_calc_state';  // sessionStorage key for form persistence
-const ACTIVE_KEY  = 'll97_active';      // sessionStorage key for nav chip (read by settings.html)
+const SESSION_KEY = 'll97_calc_state';  // localStorage key for form persistence
+const ACTIVE_KEY  = 'll97_active';      // localStorage key for nav chip (read by settings.html)
 
 // ── OCCUPANCY GROUP MANAGER ───────────────────────────────────────────────────
 function buildOccRow(index, defaultType = '', defaultArea = '') {
@@ -124,7 +124,7 @@ function getOccupancyGroups() {
 }
 
 function getAllOccupancyRows() {
-  // Returns all rows (including blank), for sessionStorage snapshot.
+  // Returns all rows (including blank), for localStorage snapshot.
   const rows = [];
   document.querySelectorAll('#occupancy-groups .occ-row').forEach(row => {
     const idx = row.id.replace('occ-', '');
@@ -226,12 +226,12 @@ function updateActiveBuildingNav() {
     nav.innerHTML = '';
   }
 
-  // Sync to sessionStorage so settings.html / manage.html can read it
+  // Sync to localStorage so settings.html / manage.html can read it
   try {
     if (currentSaveName) {
-      sessionStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: currentSaveName }));
+      localStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: currentSaveName }));
     } else {
-      sessionStorage.removeItem(ACTIVE_KEY);
+      localStorage.removeItem(ACTIVE_KEY);
     }
   } catch (e) { /* ignore */ }
 
@@ -254,7 +254,7 @@ function syncManageLink() {
 function saveFormState() {
   if (_loading) return;
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
       saveName:     currentSaveName,
       buildingData: currentBuildingData,
       isDirty,
@@ -273,14 +273,14 @@ function saveFormState() {
 
 function clearFormState() {
   try {
-    sessionStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(ACTIVE_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(ACTIVE_KEY);
   } catch (e) { /* ignore */ }
 }
 
 function restoreFormState() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return false;
     const state = JSON.parse(raw);
 
@@ -931,7 +931,7 @@ function esc(str) {
   // Load energy prices (for the usage table cost column)
   await loadEnergyPrices();
 
-  // Restore state from sessionStorage (navigating back from Settings, etc.)
+  // Restore state from localStorage (navigating back from Settings, etc.)
   const restored = restoreFormState();
   if (!restored) {
     // Fresh start — add one blank occupancy row
@@ -951,6 +951,17 @@ function esc(str) {
       markDirty();
       updateEnergyCosts();
     });
+  });
+
+  // Ctrl/Cmd+S shortcut — open Save Building modal when results are visible
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      const resultsSection = document.getElementById('results-section');
+      if (resultsSection && !resultsSection.classList.contains('hidden')) {
+        e.preventDefault();
+        openSaveModal();
+      }
+    }
   });
 
   // Check DB status

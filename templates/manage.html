@@ -73,6 +73,7 @@
           <span class="manage-legend-note"><span class="manage-fine-year-example">Red bold</span> years indicate non-compliance under the selected scenario (or baseline).</span>
         </p>
       </div>
+      <a href="/reduction-plan" class="btn btn-ghost btn-sm manage-rp-btn">Create/Edit Reduction Plan Scenarios →</a>
     </div>
 
     <!-- Scenario selector -->
@@ -82,7 +83,6 @@
         <option value="">None — Baseline Only</option>
       </select>
       <span id="manage-scenario-loading" class="manage-scenario-loading hidden">Computing…</span>
-      <a href="/reduction-plan" class="manage-scenario-rp-link">Create/Edit Reduction Plan Scenarios →</a>
     </div>
 
     <div class="manage-chart-wrapper">
@@ -105,9 +105,9 @@
 <script>
 (function() {
   try {
-    const a = JSON.parse(sessionStorage.getItem('ll97_active') || 'null');
+    const a = JSON.parse(localStorage.getItem('ll97_active') || 'null');
     if (a && a.saveName) {
-      const st = JSON.parse(sessionStorage.getItem('ll97_calc_state') || 'null');
+      const st = JSON.parse(localStorage.getItem('ll97_calc_state') || 'null');
       const bd = st && st.buildingData ? st.buildingData : null;
       const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       let tip = '<div class="abt-name">' + esc(bd && bd.property_name ? bd.property_name : a.saveName) + '</div>';

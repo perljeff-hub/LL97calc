@@ -20,6 +20,15 @@ const FUEL_META = {
   oil4_savings:  {label: 'Oil #4',       unit: 'gal',    baseKey: 'fo4'},
 };
 
+// Compliance period definitions (used for scenario insight banner)
+const PERIOD_DEFS = [
+  {key: '2024_2029', startYear: 2024, years: 6,  label: '2024–2029'},
+  {key: '2030_2034', startYear: 2030, years: 5,  label: '2030–2034'},
+  {key: '2035_2039', startYear: 2035, years: 5,  label: '2035–2039'},
+  {key: '2040_2049', startYear: 2040, years: 10, label: '2040–2049'},
+  {key: '2050_plus', startYear: 2050, years: 1,  label: '2050+'},
+];
+
 // Maps each year 2024-2050 → compliance period key
 const PERIOD_FOR_YEAR = {};
 [['2024_2029',[2024,2025,2026,2027,2028,2029]],
@@ -45,7 +54,7 @@ let scenarios         = [];   // [{id, name, number}]
 let currentScenarioId = null;
 // placements: year (number) → [measureId, ...]
 let placements        = {};
-// Baseline energy usage from sessionStorage (may be null if not loaded)
+// Baseline energy usage from localStorage (may be null if not loaded)
 let baselineEnergy    = null; // {elec, gas, steam, fo2, fo4} — all numbers
 
 // Warning modal promise resolver
@@ -61,14 +70,15 @@ let isDirty           = false;       // unsaved timeline changes
 let baselineOccupancyGroups = null;  // occupancy groups from session state
 
 // Prices/emission factors for cost & carbon savings columns
-let pricesCfg    = null; // {electricity_kwh: {price, escalator}, natural_gas_therm: {...}, ...}
-let utilFactors  = null; // {2024_2029: {electricity_kwh: N, natural_gas_kbtu: N, ...}, ...}
+let pricesCfg      = null; // {electricity_kwh: {price, escalator}, natural_gas_therm: {...}, ...}
+let utilFactors    = null; // {2024_2029: {electricity_kwh: N, natural_gas_kbtu: N, ...}, ...}
+let baselineResults = null; // {2024_2029: {emissions, limit, compliant, penalty}, ...} from /api/calculate
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) { showNoBuilding(); return; }
     const state = JSON.parse(raw);
     if (!state.saveName) { showNoBuilding(); return; }
@@ -95,7 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   try {
-    await Promise.all([loadMeasures(), loadScenarios(), loadPricesAndFactors()]);
+    await Promise.all([loadMeasures(), loadScenarios(), loadPricesAndFactors(), loadBaselineCompliance()]);
     buildTimeline();
     bindEventListeners();
     updateSuggestBtn();
@@ -147,9 +157,9 @@ async function loadScenarios() {
 
   // Check if Timeline passed a scenario to pre-select
   currentScenarioId = scenarios[0].id;
-  const timelineScenId = sessionStorage.getItem('ll97_timeline_scenario_id');
+  const timelineScenId = localStorage.getItem('ll97_timeline_scenario_id');
   if (timelineScenId) {
-    sessionStorage.removeItem('ll97_timeline_scenario_id');
+    localStorage.removeItem('ll97_timeline_scenario_id');
     const targetId = parseInt(timelineScenId, 10);
     if (scenarios.some(s => s.id === targetId)) currentScenarioId = targetId;
   }
@@ -187,6 +197,26 @@ async function loadPricesAndFactors() {
   }
 }
 
+async function loadBaselineCompliance() {
+  if (!baselineEnergy || !baselineOccupancyGroups || !baselineOccupancyGroups.length) return;
+  try {
+    const resp = await fetch('/api/calculate', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({
+        electricity_kwh:    baselineEnergy.elec,
+        natural_gas_therms: baselineEnergy.gas,
+        district_steam_mlb: baselineEnergy.steam,
+        fuel_oil_2_gal:     baselineEnergy.fo2,
+        fuel_oil_4_gal:     baselineEnergy.fo4,
+        occupancy_groups:   baselineOccupancyGroups,
+      }),
+    });
+    const data = await resp.json();
+    if (resp.ok) baselineResults = data.results;
+  } catch (_) { /* non-critical — insight banner simply won't show */ }
+}
+
 // ── Build UI ──────────────────────────────────────────────────────────────────
 
 function buildTimeline() {
@@ -218,6 +248,26 @@ function buildTimeline() {
     zone.addEventListener('dragover', onDragOver);
     zone.addEventListener('dragleave', onDragLeave);
     zone.addEventListener('drop', e => onDrop(e, year));
+  });
+
+  // Drop onto the measures panel → remove from timeline
+  const measuresList = document.getElementById('rp-measures-list');
+  measuresList.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('application/rp-drag-type')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    measuresList.classList.add('drag-target');
+  });
+  measuresList.addEventListener('dragleave', e => {
+    if (!measuresList.contains(e.relatedTarget)) measuresList.classList.remove('drag-target');
+  });
+  measuresList.addEventListener('drop', e => {
+    e.preventDefault();
+    measuresList.classList.remove('drag-target');
+    if (e.dataTransfer.getData('application/rp-drag-type') !== 'from-timeline') return;
+    const measureId  = parseInt(e.dataTransfer.getData('application/rp-measure-id'), 10);
+    const sourceYear = parseInt(e.dataTransfer.getData('application/rp-source-year'), 10);
+    if (measureId && sourceYear) removePlacement(sourceYear, measureId);
   });
 
   renderMeasuresList();
@@ -379,6 +429,7 @@ function makeMeasureCard(m, isPlaced) {
       card.classList.add('dragging');
     });
     card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    attachTouchDrag(card, m.id, 'from-list', null);
   }
 
   return card;
@@ -666,6 +717,7 @@ function renderTimelineYear(year) {
       chip.classList.add('dragging');
     });
     chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+    attachTouchDrag(chip, mid, 'from-timeline', year);
 
     zone.appendChild(chip);
   });
@@ -732,6 +784,59 @@ function getPlacedIds() {
   const set = new Set();
   Object.values(placements).forEach(ids => ids.forEach(id => set.add(id)));
   return set;
+}
+
+// ── Touch drag-and-drop (mobile/Android fallback) ─────────────────────────────
+// HTML5 drag-and-drop events don't fire reliably on Android Chrome touch screens.
+// This parallel touch implementation mirrors the same drop logic using touch events.
+
+let _tdId = null, _tdType = null, _tdSrc = null;
+let _tdClone = null, _tdEl = null;
+let _tdStartX = 0, _tdStartY = 0, _tdActive = false;
+
+function attachTouchDrag(el, measureId, dragType, sourceYear) {
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    _tdId = measureId; _tdType = dragType; _tdSrc = sourceYear || null;
+    _tdEl = el; _tdStartX = t.clientX; _tdStartY = t.clientY; _tdActive = false;
+  }, {passive: true});
+}
+
+function _tdStart(el) {
+  const rect = el.getBoundingClientRect();
+  _tdClone = el.cloneNode(true);
+  _tdClone.style.cssText =
+    `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;` +
+    `pointer-events:none;opacity:.75;z-index:9999;` +
+    `transform:scale(1.04);box-shadow:0 4px 16px rgba(0,0,0,.25);transition:none`;
+  document.body.appendChild(_tdClone);
+  el.classList.add('dragging');
+}
+
+function _tdClear() {
+  if (_tdClone) { _tdClone.remove(); _tdClone = null; }
+  if (_tdEl) { _tdEl.classList.remove('dragging'); }
+  document.querySelectorAll('.drag-over, .drag-target')
+    .forEach(el => el.classList.remove('drag-over', 'drag-target'));
+  _tdId = _tdType = _tdSrc = _tdEl = null; _tdActive = false;
+}
+
+function _tdDropToYear(targetYear) {
+  if (!_tdId) return;
+  if (_tdType === 'from-timeline') {
+    if (!_tdSrc || _tdSrc === targetYear) return;
+    placements[_tdSrc] = (placements[_tdSrc] || []).filter(id => id !== _tdId);
+    renderTimelineYear(_tdSrc);
+  } else {
+    if (getPlacedIds().has(_tdId)) return;
+  }
+  if (!placements[targetYear]) placements[targetYear] = [];
+  if (!placements[targetYear].includes(_tdId)) placements[targetYear].push(_tdId);
+  renderTimelineYear(targetYear);
+  renderMeasuresList();
+  updateSummaryTable();
+  markDirty();
 }
 
 // ── Summary table ─────────────────────────────────────────────────────────────
@@ -848,6 +953,95 @@ function updateSummaryTable() {
     `<td>${totals.costSav > 0 ? '<strong>$' + Math.round(totals.costSav).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
     `<td>${totals.carbSav > 0.005 ? '<strong>' + fmtNum(totals.carbSav) + '</strong>' : '—'}</td>` +
     `</tr>`;
+
+  renderScenarioInsightBanner();
+}
+
+// ── Scenario Insight Banner ───────────────────────────────────────────────────
+
+// Returns cumulative annual fuel savings (in native units) from all measures
+// placed in years <= the given year.
+function getCumulativeSavingsAtYear(year) {
+  const result = {elec: 0, gas: 0, steam: 0, oil2: 0, oil4: 0};
+  Object.entries(placements).forEach(([yr, ids]) => {
+    if (parseInt(yr, 10) <= year) {
+      ids.forEach(id => {
+        const m = measures.find(m => m.id === id);
+        if (m) {
+          result.elec  += m.elec_savings  || 0;
+          result.gas   += m.gas_savings   || 0;
+          result.steam += m.steam_savings || 0;
+          result.oil2  += m.oil2_savings  || 0;
+          result.oil4  += m.oil4_savings  || 0;
+        }
+      });
+    }
+  });
+  return result;
+}
+
+function renderScenarioInsightBanner() {
+  const el = document.getElementById('rp-scenario-insight');
+  if (!el) return;
+
+  const activeYears = YEARS.filter(y => (placements[y] || []).length > 0);
+  if (!activeYears.length || !baselineResults || !utilFactors) {
+    el.classList.add('hidden');
+    return;
+  }
+
+  let baselineCumulativeFines = 0;
+  let scenarioCumulativeFines = 0;
+  let firstCompliancePeriod   = null;
+  let anyBaselineNonCompliant = false;
+
+  PERIOD_DEFS.forEach(pd => {
+    const baseline = baselineResults[pd.key];
+    if (!baseline) return;
+    if (!baseline.compliant) anyBaselineNonCompliant = true;
+
+    // Carbon savings from measures active at start of this period
+    const sav = getCumulativeSavingsAtYear(pd.startYear);
+    const ef  = utilFactors[pd.key] || {};
+    const carbonSav =
+      sav.elec  * (ef.electricity_kwh     || 0) +
+      sav.gas   * 100   * (ef.natural_gas_kbtu    || 0) +
+      sav.steam * 1194  * (ef.district_steam_kbtu || 0) +
+      sav.oil2  * 138.5 * (ef.fuel_oil_2_kbtu     || 0) +
+      sav.oil4  * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+
+    const scenarioEmissions = Math.max(0, baseline.emissions - carbonSav);
+    const limit             = baseline.limit;
+    const scenarioCompliant = scenarioEmissions <= limit;
+
+    baselineCumulativeFines += Math.max(0, baseline.emissions - limit) * 268 * pd.years;
+    scenarioCumulativeFines += Math.max(0, scenarioEmissions  - limit) * 268 * pd.years;
+
+    if (!baseline.compliant && scenarioCompliant && !firstCompliancePeriod) {
+      firstCompliancePeriod = pd;
+    }
+  });
+
+  const fineReduction = Math.round(baselineCumulativeFines - scenarioCumulativeFines);
+
+  let html = '';
+  if (!anyBaselineNonCompliant) {
+    html = 'Your building is already projected to be compliant in all periods. This scenario further reduces emissions.';
+  } else if (firstCompliancePeriod) {
+    html = `This scenario brings the building into compliance starting in the <strong>${firstCompliancePeriod.label}</strong> period`;
+    if (fineReduction > 0) {
+      html += ` and reduces cumulative fines through 2050 by <strong>$${fineReduction.toLocaleString('en-US')}</strong>`;
+    }
+    html += '.';
+  } else if (fineReduction > 0) {
+    html = `This scenario reduces cumulative fines through 2050 by <strong>$${fineReduction.toLocaleString('en-US')}</strong>, but does not achieve full compliance in any period with the current measures.`;
+  } else {
+    el.classList.add('hidden');
+    return;
+  }
+
+  el.innerHTML = html;
+  el.classList.remove('hidden');
 }
 
 // ── Measure CRUD ──────────────────────────────────────────────────────────────
@@ -1256,7 +1450,7 @@ function bindEventListeners() {
       const goingToTimeline = href === '/manage';
       // Always store scenario for Timeline nav (clean or dirty)
       if (goingToTimeline && currentScenarioId) {
-        sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+        localStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
       }
       if (!isDirty) return;
       e.preventDefault();
@@ -1302,6 +1496,65 @@ function bindEventListeners() {
   document.getElementById('rp-suggest-use-discount').addEventListener('change', function() {
     document.getElementById('rp-suggest-discount-row').classList.toggle('hidden', !this.checked);
   });
+
+  // Ctrl/Cmd+S shortcut — save current scenario
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      if (currentBuilding) saveScenario(false);
+    }
+  });
+
+  // Touch drag-and-drop — document-level move/end handlers (registered once)
+  document.addEventListener('touchmove', e => {
+    if (_tdId === null) return;
+    const t = e.touches[0];
+    if (!_tdActive) {
+      if (Math.hypot(t.clientX - _tdStartX, t.clientY - _tdStartY) < 6) return;
+      _tdActive = true;
+      _tdStart(_tdEl);
+    }
+    e.preventDefault(); // prevent scroll while dragging
+    const hw = _tdClone ? _tdClone.offsetWidth / 2 : 0;
+    const hh = _tdClone ? _tdClone.offsetHeight / 2 : 0;
+    if (_tdClone) { _tdClone.style.left = (t.clientX - hw) + 'px'; _tdClone.style.top = (t.clientY - hh) + 'px'; }
+
+    // Highlight drop targets
+    if (_tdClone) _tdClone.style.display = 'none';
+    const under = document.elementFromPoint(t.clientX, t.clientY);
+    if (_tdClone) _tdClone.style.display = '';
+    document.querySelectorAll('.drag-over, .drag-target')
+      .forEach(el => el.classList.remove('drag-over', 'drag-target'));
+    const zone = under?.closest('.rp-drop-zone');
+    if (zone) zone.classList.add('drag-over');
+    if (_tdType === 'from-timeline') {
+      const list = under?.closest('#rp-measures-list');
+      if (list) list.classList.add('drag-target');
+    }
+  }, {passive: false});
+
+  document.addEventListener('touchend', e => {
+    if (_tdId === null || !_tdActive) { _tdClear(); return; }
+    const t = e.changedTouches[0];
+    // Snapshot state before _tdClear() resets it
+    const dropId = _tdId, dropType = _tdType, dropSrc = _tdSrc;
+    // Read drop target before removing clone
+    if (_tdClone) _tdClone.style.display = 'none';
+    const under = document.elementFromPoint(t.clientX, t.clientY);
+    _tdClear();
+    const zone = under?.closest('.rp-drop-zone');
+    const list = under?.closest('#rp-measures-list');
+    if (zone) {
+      // Temporarily restore state for _tdDropToYear
+      _tdId = dropId; _tdType = dropType; _tdSrc = dropSrc;
+      _tdDropToYear(parseInt(zone.dataset.year, 10));
+      _tdId = _tdType = _tdSrc = null;
+    } else if (list && dropType === 'from-timeline' && dropSrc) {
+      removePlacement(dropSrc, dropId);
+    }
+  }, {passive: true});
+
+  document.addEventListener('touchcancel', () => { _tdClear(); }, {passive: true});
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1373,7 +1626,7 @@ function showUnsavedModal(href, isTimeline) {
 
 function doNavigate() {
   if (_pendingNavIsTimeline && currentScenarioId) {
-    sessionStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
+    localStorage.setItem('ll97_rp_scenario_id', String(currentScenarioId));
   }
   isDirty = false;  // prevent beforeunload from firing
   window.location.href = _pendingNavHref;

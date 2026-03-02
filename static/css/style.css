@@ -1027,15 +1027,11 @@ body {
   color: var(--gray-500);
   font-style: italic;
 }
-.manage-scenario-rp-link {
-  font-size: .82rem;
-  font-weight: 600;
-  color: var(--blue-dark);
-  text-decoration: none;
+.manage-rp-btn {
+  flex-shrink: 0;
   white-space: nowrap;
-  margin-left: auto;
+  align-self: flex-start;
 }
-.manage-scenario-rp-link:hover { text-decoration: underline; }
 
 /* Chart HTML tooltip */
 .chartjs-html-tooltip {
@@ -1272,10 +1268,17 @@ body {
 .rp-measures-list {
   display: flex;
   flex-direction: column;
-  gap: .45rem;
-  max-height: 420px;
+  gap: .25rem;
+  max-height: 560px;
   overflow-y: auto;
   padding-right: 2px;
+  border-radius: var(--radius-sm);
+  transition: outline .1s, background .1s;
+}
+.rp-measures-list.drag-target {
+  outline: 2px dashed var(--blue-mid);
+  outline-offset: 3px;
+  background: var(--blue-pale);
 }
 .rp-empty-hint {
   font-size: .85rem;
@@ -1289,8 +1292,8 @@ body {
 .rp-measure-card {
   display: flex;
   align-items: center;
-  gap: .6rem;
-  padding: .55rem .75rem;
+  gap: .5rem;
+  padding: .32rem .65rem;
   background: var(--blue-pale);
   border: 1.5px solid var(--blue-light);
   border-radius: var(--radius-sm);
@@ -1307,8 +1310,8 @@ body {
   cursor: not-allowed;
 }
 .rp-measure-info { flex: 1; min-width: 0; }
-.rp-measure-name { font-size: .875rem; font-weight: 600; color: var(--blue-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rp-measure-meta { font-size: .72rem; color: var(--gray-500); margin-top: .1rem; }
+.rp-measure-name { font-size: .82rem; font-weight: 600; color: var(--blue-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-measure-meta { font-size: .7rem; color: var(--gray-500); margin-top: 0; }
 .rp-measure-delete {
   flex-shrink: 0;
   width: 22px; height: 22px;
@@ -1611,6 +1614,67 @@ body {
 .rp-suggest-status.info { background: var(--blue-pale); color: var(--blue-dark); }
 .rp-suggest-status.error-msg { margin-top: .25rem; }
 .rp-suggest-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+/* ── HELP ICON TOOLTIP ───────────────────────────────────────────────────── */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gray-200);
+  color: var(--gray-600);
+  font-size: .68rem;
+  font-weight: 700;
+  font-style: normal;
+  cursor: help;
+  position: relative;
+  vertical-align: middle;
+  margin-left: 4px;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  user-select: none;
+}
+.help-icon::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: .775rem;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: .45rem .65rem;
+  border-radius: 5px;
+  width: 240px;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 200;
+  white-space: normal;
+  box-shadow: 0 3px 10px rgba(0,0,0,.25);
+}
+.help-icon:hover::after,
+.help-icon:focus::after { opacity: 1; }
+.help-icon:focus { outline: 2px solid var(--blue-mid); outline-offset: 1px; }
+
+/* ── SCENARIO INSIGHT BANNER ────────────────────────────────────────────── */
+.rp-scenario-insight {
+  padding: .7rem 1rem;
+  background: #eef6fb;
+  border-left: 3px solid var(--blue-mid);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .875rem;
+  color: var(--gray-900);
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
 
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
