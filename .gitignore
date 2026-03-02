@@ -21,6 +21,7 @@ instance/
 
 # Database (generated at runtime — populate with: python app.py --init-db)
 ll84.db
+savedbuildings.db
 
 # Environment / secrets
 .env
