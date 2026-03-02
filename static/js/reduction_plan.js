@@ -387,6 +387,16 @@ function makeMeasureCard(m, isPlaced) {
   if (m.steam_savings) parts.push(fmtNum(m.steam_savings) + ' mLbs');
   if (m.oil2_savings)  parts.push(fmtNum(m.oil2_savings) + ' gal #2');
   if (m.oil4_savings)  parts.push(fmtNum(m.oil4_savings) + ' gal #4');
+  // tCO₂e/yr using 2024–2029 emission factors as reference
+  if (utilFactors) {
+    const ef = utilFactors['2024_2029'] || {};
+    const co2 = (m.elec_savings  || 0) * (ef.electricity_kwh     || 0)
+              + (m.gas_savings   || 0) * 100   * (ef.natural_gas_kbtu    || 0)
+              + (m.steam_savings || 0) * 1194  * (ef.district_steam_kbtu || 0)
+              + (m.oil2_savings  || 0) * 138.5 * (ef.fuel_oil_2_kbtu     || 0)
+              + (m.oil4_savings  || 0) * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+    if (co2 > 0.005) parts.push(fmtNum(co2) + ' tCO\u2082e/yr');
+  }
   meta.textContent = parts.join(' · ') || 'No savings entered';
 
   info.appendChild(nameRow);
@@ -893,6 +903,7 @@ function updateSummaryTable() {
   const activeYears = YEARS.filter(y => (placements[y] || []).length > 0);
   if (!activeYears.length) {
     section.classList.add('hidden');
+    updateYearBadgeColors();
     return;
   }
   section.classList.remove('hidden');
@@ -955,6 +966,7 @@ function updateSummaryTable() {
     `</tr>`;
 
   renderScenarioInsightBanner();
+  updateYearBadgeColors();
 }
 
 // ── Scenario Insight Banner ───────────────────────────────────────────────────
@@ -1042,6 +1054,48 @@ function renderScenarioInsightBanner() {
 
   el.innerHTML = html;
   el.classList.remove('hidden');
+}
+
+// ── Year badge compliance coloring ───────────────────────────────────────────
+
+// Colors each year badge red if the building will incur a fine that year
+// after applying all measures placed up to and including that year.
+function updateYearBadgeColors() {
+  if (!baselineResults || !utilFactors) return;
+  YEARS.forEach(year => {
+    const row = document.querySelector(`.rp-timeline-row[data-year="${year}"]`);
+    if (!row) return;
+    const badge = row.querySelector('.rp-year-badge');
+    if (!badge) return;
+
+    const pKey     = PERIOD_FOR_YEAR[year] || '2050_plus';
+    const baseline = baselineResults[pKey];
+    if (!baseline) return;
+
+    const sav = getCumulativeSavingsAtYear(year);
+    const ef  = utilFactors[pKey] || {};
+    const carbonSav =
+      sav.elec  * (ef.electricity_kwh     || 0) +
+      sav.gas   * 100   * (ef.natural_gas_kbtu    || 0) +
+      sav.steam * 1194  * (ef.district_steam_kbtu || 0) +
+      sav.oil2  * 138.5 * (ef.fuel_oil_2_kbtu     || 0) +
+      sav.oil4  * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+
+    const scenarioEmissions = Math.max(0, baseline.emissions - carbonSav);
+    const limit = baseline.limit;
+
+    if (scenarioEmissions > limit) {
+      const tonsOver = scenarioEmissions - limit;
+      const fineAmt  = Math.round(tonsOver * 268);
+      badge.classList.add('rp-year-badge-fine');
+      badge.dataset.fineTip =
+        'Fine: $' + fineAmt.toLocaleString('en-US') +
+        ' \u00b7 ' + fmtNum(tonsOver) + ' tCO\u2082e over limit';
+    } else {
+      badge.classList.remove('rp-year-badge-fine');
+      delete badge.dataset.fineTip;
+    }
+  });
 }
 
 // ── Measure CRUD ──────────────────────────────────────────────────────────────
