@@ -250,6 +250,26 @@ function buildTimeline() {
     zone.addEventListener('drop', e => onDrop(e, year));
   });
 
+  // Drop onto the measures panel → remove from timeline
+  const measuresList = document.getElementById('rp-measures-list');
+  measuresList.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('application/rp-drag-type')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    measuresList.classList.add('drag-target');
+  });
+  measuresList.addEventListener('dragleave', e => {
+    if (!measuresList.contains(e.relatedTarget)) measuresList.classList.remove('drag-target');
+  });
+  measuresList.addEventListener('drop', e => {
+    e.preventDefault();
+    measuresList.classList.remove('drag-target');
+    if (e.dataTransfer.getData('application/rp-drag-type') !== 'from-timeline') return;
+    const measureId  = parseInt(e.dataTransfer.getData('application/rp-measure-id'), 10);
+    const sourceYear = parseInt(e.dataTransfer.getData('application/rp-source-year'), 10);
+    if (measureId && sourceYear) removePlacement(sourceYear, measureId);
+  });
+
   renderMeasuresList();
   renderAllTimelineYears();
   updateSummaryTable();
@@ -409,6 +429,7 @@ function makeMeasureCard(m, isPlaced) {
       card.classList.add('dragging');
     });
     card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    attachTouchDrag(card, m.id, 'from-list', null);
   }
 
   return card;
@@ -696,6 +717,7 @@ function renderTimelineYear(year) {
       chip.classList.add('dragging');
     });
     chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+    attachTouchDrag(chip, mid, 'from-timeline', year);
 
     zone.appendChild(chip);
   });
@@ -762,6 +784,59 @@ function getPlacedIds() {
   const set = new Set();
   Object.values(placements).forEach(ids => ids.forEach(id => set.add(id)));
   return set;
+}
+
+// ── Touch drag-and-drop (mobile/Android fallback) ─────────────────────────────
+// HTML5 drag-and-drop events don't fire reliably on Android Chrome touch screens.
+// This parallel touch implementation mirrors the same drop logic using touch events.
+
+let _tdId = null, _tdType = null, _tdSrc = null;
+let _tdClone = null, _tdEl = null;
+let _tdStartX = 0, _tdStartY = 0, _tdActive = false;
+
+function attachTouchDrag(el, measureId, dragType, sourceYear) {
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    _tdId = measureId; _tdType = dragType; _tdSrc = sourceYear || null;
+    _tdEl = el; _tdStartX = t.clientX; _tdStartY = t.clientY; _tdActive = false;
+  }, {passive: true});
+}
+
+function _tdStart(el) {
+  const rect = el.getBoundingClientRect();
+  _tdClone = el.cloneNode(true);
+  _tdClone.style.cssText =
+    `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;` +
+    `pointer-events:none;opacity:.75;z-index:9999;` +
+    `transform:scale(1.04);box-shadow:0 4px 16px rgba(0,0,0,.25);transition:none`;
+  document.body.appendChild(_tdClone);
+  el.classList.add('dragging');
+}
+
+function _tdClear() {
+  if (_tdClone) { _tdClone.remove(); _tdClone = null; }
+  if (_tdEl) { _tdEl.classList.remove('dragging'); }
+  document.querySelectorAll('.drag-over, .drag-target')
+    .forEach(el => el.classList.remove('drag-over', 'drag-target'));
+  _tdId = _tdType = _tdSrc = _tdEl = null; _tdActive = false;
+}
+
+function _tdDropToYear(targetYear) {
+  if (!_tdId) return;
+  if (_tdType === 'from-timeline') {
+    if (!_tdSrc || _tdSrc === targetYear) return;
+    placements[_tdSrc] = (placements[_tdSrc] || []).filter(id => id !== _tdId);
+    renderTimelineYear(_tdSrc);
+  } else {
+    if (getPlacedIds().has(_tdId)) return;
+  }
+  if (!placements[targetYear]) placements[targetYear] = [];
+  if (!placements[targetYear].includes(_tdId)) placements[targetYear].push(_tdId);
+  renderTimelineYear(targetYear);
+  renderMeasuresList();
+  updateSummaryTable();
+  markDirty();
 }
 
 // ── Summary table ─────────────────────────────────────────────────────────────
@@ -1429,6 +1504,57 @@ function bindEventListeners() {
       if (currentBuilding) saveScenario(false);
     }
   });
+
+  // Touch drag-and-drop — document-level move/end handlers (registered once)
+  document.addEventListener('touchmove', e => {
+    if (_tdId === null) return;
+    const t = e.touches[0];
+    if (!_tdActive) {
+      if (Math.hypot(t.clientX - _tdStartX, t.clientY - _tdStartY) < 6) return;
+      _tdActive = true;
+      _tdStart(_tdEl);
+    }
+    e.preventDefault(); // prevent scroll while dragging
+    const hw = _tdClone ? _tdClone.offsetWidth / 2 : 0;
+    const hh = _tdClone ? _tdClone.offsetHeight / 2 : 0;
+    if (_tdClone) { _tdClone.style.left = (t.clientX - hw) + 'px'; _tdClone.style.top = (t.clientY - hh) + 'px'; }
+
+    // Highlight drop targets
+    if (_tdClone) _tdClone.style.display = 'none';
+    const under = document.elementFromPoint(t.clientX, t.clientY);
+    if (_tdClone) _tdClone.style.display = '';
+    document.querySelectorAll('.drag-over, .drag-target')
+      .forEach(el => el.classList.remove('drag-over', 'drag-target'));
+    const zone = under?.closest('.rp-drop-zone');
+    if (zone) zone.classList.add('drag-over');
+    if (_tdType === 'from-timeline') {
+      const list = under?.closest('#rp-measures-list');
+      if (list) list.classList.add('drag-target');
+    }
+  }, {passive: false});
+
+  document.addEventListener('touchend', e => {
+    if (_tdId === null || !_tdActive) { _tdClear(); return; }
+    const t = e.changedTouches[0];
+    // Snapshot state before _tdClear() resets it
+    const dropId = _tdId, dropType = _tdType, dropSrc = _tdSrc;
+    // Read drop target before removing clone
+    if (_tdClone) _tdClone.style.display = 'none';
+    const under = document.elementFromPoint(t.clientX, t.clientY);
+    _tdClear();
+    const zone = under?.closest('.rp-drop-zone');
+    const list = under?.closest('#rp-measures-list');
+    if (zone) {
+      // Temporarily restore state for _tdDropToYear
+      _tdId = dropId; _tdType = dropType; _tdSrc = dropSrc;
+      _tdDropToYear(parseInt(zone.dataset.year, 10));
+      _tdId = _tdType = _tdSrc = null;
+    } else if (list && dropType === 'from-timeline' && dropSrc) {
+      removePlacement(dropSrc, dropId);
+    }
+  }, {passive: true});
+
+  document.addEventListener('touchcancel', () => { _tdClear(); }, {passive: true});
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
