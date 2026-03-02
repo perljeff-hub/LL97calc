@@ -1360,6 +1360,7 @@ body {
   border-radius: 3px;
   margin-top: 2px;
   letter-spacing: .02em;
+  position: relative;
 }
 .rp-drop-zone {
   flex: 1;
@@ -1675,6 +1676,33 @@ body {
   line-height: 1.5;
   margin-bottom: 1rem;
 }
+
+/* ── RED YEAR BADGE (non-compliant after scenario measures) ─────────────── */
+.rp-year-badge-fine {
+  background: var(--red);
+  cursor: default;
+}
+.rp-year-badge-fine::after {
+  content: attr(data-fine-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: .72rem;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: .35rem .6rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 50;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.rp-year-badge-fine:hover::after { opacity: 1; }
 
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
