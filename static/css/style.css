@@ -1180,6 +1180,8 @@ body {
   display: flex;
   align-items: center;
   gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Save split-button */
@@ -1224,7 +1226,7 @@ body {
 .rp-save-dropdown-item:hover { background: var(--blue-pale); }
 .rp-save-dropdown-danger { color: var(--red); }
 .rp-save-dropdown-danger:hover { background: #fff0f0; color: var(--red); }
-.rp-save-status { font-size: .82rem; font-weight: 600; }
+.rp-save-status { font-size: .82rem; font-weight: 600; width: 100%; text-align: right; }
 .rp-save-ok    { color: var(--green); }
 .rp-save-error { color: var(--red); }
 
@@ -1345,16 +1347,12 @@ body {
 .rp-timeline {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 500px;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: 1px;
 }
 .rp-timeline-row {
   display: flex;
   align-items: flex-start;
   gap: .45rem;
-  min-height: 26px;
 }
 .rp-year-badge {
   flex-shrink: 0;
@@ -1368,17 +1366,17 @@ body {
   font-size: .68rem;
   font-weight: 700;
   border-radius: 3px;
-  margin-top: 2px;
+  margin-top: 1px;
   letter-spacing: .02em;
   position: relative;
 }
 .rp-drop-zone {
   flex: 1;
   min-width: 0;
-  min-height: 28px;
+  min-height: 24px;
   border: 1px dashed var(--gray-300);
   border-radius: 3px;
-  padding: 3px 5px;
+  padding: 2px 5px;
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
