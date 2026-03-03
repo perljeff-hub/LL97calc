@@ -330,7 +330,8 @@ def _compute_scenario_period_compliance(energy, occupancy_groups, scenario_id, c
             'fuel_oil_2_gal':     max(0, (energy.get('fuel_oil_2_gal')     or 0) - cumulative['oil2']),
             'fuel_oil_4_gal':     max(0, (energy.get('fuel_oil_4_gal')     or 0) - cumulative['oil4']),
         }
-        emissions_adj = calculate_emissions(adj, utility_factors)[period]['total']
+        period_emissions = calculate_emissions(adj, utility_factors)[period]
+        emissions_adj = period_emissions['total']
         limit = calculate_limit(occupancy_groups, period)
         overage = max(0, emissions_adj - limit)
         penalty = calculate_penalty(emissions_adj, limit)
@@ -343,6 +344,7 @@ def _compute_scenario_period_compliance(energy, occupancy_groups, scenario_id, c
             'compliant':  emissions_adj <= limit,
             'intensity_kg':       round(emissions_adj / total_floor_area * 1000, 4),
             'limit_intensity_kg': round(limit          / total_floor_area * 1000, 4),
+            'breakdown':  period_emissions['breakdown'],
         }
     return results
 

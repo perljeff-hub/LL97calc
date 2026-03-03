@@ -264,7 +264,10 @@ function renderPeriods(results, gridId) {
           <div class="compliance-bar ${barClass}" style="width:${pct.toFixed(1)}%"></div>
         </div>
         <div class="compliance-bar-label">${pct.toFixed(0)}% of limit</div>
-        ` : ''}
+        ` : `
+        <div class="compliance-bar-wrap" style="visibility:hidden"><div class="compliance-bar"></div></div>
+        <div class="compliance-bar-label" style="visibility:hidden">&nbsp;</div>
+        `}
         <div class="period-divider"></div>
         <div class="period-metric">
           <div class="period-metric-label">Overage</div>
