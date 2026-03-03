@@ -2,8 +2,9 @@ services:
   - type: web
     name: ll97-calculator
     env: python
-    # Download LL84 building data (~26k buildings from NYC Open Data) at build time
-    buildCommand: pip install -r requirements.txt && python app.py --init-db
+    # Download LL84 building data (~26k buildings from NYC Open Data) at build time.
+    # Skips if ll84.db already exists. Never overwrites savedbuildings.db.
+    buildCommand: pip install -r requirements.txt && { [ -f savedbuildings.db ] && cp savedbuildings.db savedbuildings.db.bak; python app.py --init-db; [ ! -f savedbuildings.db ] && [ -f savedbuildings.db.bak ] && cp savedbuildings.db.bak savedbuildings.db; true; }
     startCommand: bash run.sh --prod
     envVars:
       - key: SECRET_KEY

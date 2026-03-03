@@ -35,9 +35,22 @@ if [[ -z "$MODE" ]]; then
     exit 1
 fi
 
+# Guard: never overwrite an existing savedbuildings.db during deploy/init.
+SAVED_DB="$(dirname "$0")/savedbuildings.db"
+if [[ -f "$SAVED_DB" && "$INIT_DB" -eq 1 ]]; then
+    cp "$SAVED_DB" "${SAVED_DB}.bak"
+    echo "Backed up savedbuildings.db → savedbuildings.db.bak"
+fi
+
 if [[ "$INIT_DB" -eq 1 ]]; then
     echo "Downloading NYC LL84 building data (~26,000 buildings)..."
     python3 app.py --init-db
+fi
+
+# Restore savedbuildings.db from backup if it was accidentally removed
+if [[ ! -f "$SAVED_DB" && -f "${SAVED_DB}.bak" ]]; then
+    cp "${SAVED_DB}.bak" "$SAVED_DB"
+    echo "Restored savedbuildings.db from backup."
 fi
 
 if [[ "$MODE" == "local" ]]; then
