@@ -220,6 +220,31 @@ function renderPeriods(results, gridId) {
     col.className = `period-col ${statusClass}`;
     const pct = r.limit > 0 ? Math.min(100, (r.emissions / r.limit) * 100) : 0;
     const barClass = compliant ? 'ok' : 'over';
+    // Build per-fuel emissions breakdown mini-bars
+    const breakdownSources = [
+      { key: 'electricity',    label: 'Electricity' },
+      { key: 'natural_gas',    label: 'Natural Gas' },
+      { key: 'district_steam', label: 'District Steam' },
+      { key: 'fuel_oil_2',     label: '#2 Fuel Oil' },
+      { key: 'fuel_oil_4',     label: '#4 Fuel Oil' },
+    ];
+    const breakdown = r.breakdown || {};
+    const totalEmissions = r.emissions || 0;
+    const miniBarHtml = breakdownSources
+      .filter(src => (breakdown[src.key] || 0) > 0)
+      .map(src => {
+        const val = breakdown[src.key] || 0;
+        const pctStr = totalEmissions > 0 ? ((val / totalEmissions) * 100).toFixed(1) : '0';
+        return `<div class="mini-bar-item">
+          <div class="mini-bar-top">
+            <span>${src.label}</span>
+            <span>${fmtTons(val)}t (${pctStr}%)</span>
+          </div>
+          <div class="mini-bar-track">
+            <div class="mini-bar-fill bar-${src.key}" style="width:${pctStr}%"></div>
+          </div>
+        </div>`;
+      }).join('');
     col.innerHTML = `
       <div class="period-header">${esc(r.label)}</div>
       <div class="period-status">${statusText}</div>
@@ -249,6 +274,13 @@ function renderPeriods(results, gridId) {
           <div class="period-metric-label">Annual Penalty</div>
           <div class="penalty-value ${r.penalty === 0 ? 'zero' : ''}">${r.penalty === 0 ? '$0' : fmtDollars(r.penalty)}</div>
         </div>
+        ${miniBarHtml ? `
+        <div class="period-divider"></div>
+        <div class="period-breakdown">
+          <div class="period-breakdown-title">Emissions Breakdown</div>
+          ${miniBarHtml}
+        </div>
+        ` : ''}
       </div>`;
     grid.appendChild(col);
   });
