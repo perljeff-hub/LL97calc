@@ -47,8 +47,8 @@ if [[ "$INIT_DB" -eq 1 ]]; then
     python3 app.py --init-db
 fi
 
-# Restore savedbuildings.db from backup if it was accidentally removed
-if [[ ! -f "$SAVED_DB" && -f "${SAVED_DB}.bak" ]]; then
+# Always restore savedbuildings.db from backup after deploy/init
+if [[ -f "${SAVED_DB}.bak" ]]; then
     cp "${SAVED_DB}.bak" "$SAVED_DB"
     echo "Restored savedbuildings.db from backup."
 fi
