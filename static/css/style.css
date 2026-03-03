@@ -1180,8 +1180,6 @@ body {
   display: flex;
   align-items: center;
   gap: .5rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 /* Save split-button */
