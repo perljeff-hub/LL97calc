@@ -1139,6 +1139,12 @@ async function addMeasure() {
     oil4_savings:  parseFloat(document.getElementById('rp-oil4').value)  || 0,
   };
 
+  // Warn if cost is $0
+  if (body.cost === 0) {
+    const ok = await showNoCostModal();
+    if (!ok) return;
+  }
+
   // Check for exceeded savings — ask user to confirm
   const confirmed = await validateSavingsObj(body);
   if (!confirmed) return;

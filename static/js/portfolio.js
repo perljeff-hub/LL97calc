@@ -61,6 +61,9 @@ async function loadPortfolio() {
 function renderPortfolio(buildings) {
   const content = document.getElementById('pf-content');
   content.innerHTML = '';
+  buildings.sort((a, b) =>
+    String(a.save_name || '').localeCompare(String(b.save_name || ''), 'en', { numeric: true, sensitivity: 'base' })
+  );
   buildings.forEach(b => {
     const card = buildBuildingCard(b);
     content.appendChild(card);
