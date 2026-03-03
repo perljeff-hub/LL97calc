@@ -6,7 +6,7 @@ Flask web application
 import os
 import json
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect
 from flask_cors import CORS
 
 # Import LL97 data
@@ -245,17 +245,139 @@ def calculate_utility_costs(energy, prices):
     return {k: round(v, 2) for k, v in costs.items()}
 
 
+def _compute_building_compliance(energy, occupancy_groups):
+    """
+    Compute per-period baseline compliance for a building.
+    Returns a dict keyed by period with emissions, limit, overage, penalty, compliant.
+    """
+    user_overrides = session.get('utility_factors', {})
+    utility_factors = get_utility_factors(user_overrides)
+    emissions_by_period = calculate_emissions(energy, utility_factors)
+    total_floor_area = sum(og['floor_area'] for og in occupancy_groups) or 1
+    results = {}
+    for period in COMPLIANCE_PERIODS:
+        emissions = emissions_by_period[period]['total']
+        limit = calculate_limit(occupancy_groups, period)
+        overage = max(0, emissions - limit)
+        penalty = calculate_penalty(emissions, limit)
+        results[period] = {
+            'label':      PERIOD_LABELS[period],
+            'emissions':  round(emissions, 4),
+            'limit':      round(limit, 4),
+            'overage':    round(overage, 4),
+            'penalty':    round(penalty, 2),
+            'compliant':  emissions <= limit,
+            'intensity_kg':       round(emissions / total_floor_area * 1000, 4),
+            'limit_intensity_kg': round(limit    / total_floor_area * 1000, 4),
+        }
+    return results
+
+
+def _compute_scenario_period_compliance(energy, occupancy_groups, scenario_id, conn):
+    """
+    Compute per-period compliance for a building under a given scenario.
+    Accumulates measure savings up to the START of each compliance period.
+    Returns a dict keyed by period.
+    """
+    user_overrides = session.get('utility_factors', {})
+    utility_factors = get_utility_factors(user_overrides)
+
+    placements = conn.execute('''
+        SELECT sm.year, m.elec_savings, m.gas_savings, m.steam_savings,
+               m.oil2_savings, m.oil4_savings
+        FROM scenario_measures sm
+        JOIN measures m ON sm.measure_id = m.id
+        WHERE sm.scenario_id = ?
+        ORDER BY sm.year
+    ''', (scenario_id,)).fetchall()
+
+    # Build cumulative savings by year
+    savings_by_year = {}
+    for p in placements:
+        yr = p['year']
+        if yr not in savings_by_year:
+            savings_by_year[yr] = dict(elec=0, gas=0, steam=0, oil2=0, oil4=0)
+        savings_by_year[yr]['elec']  += (p['elec_savings']  or 0)
+        savings_by_year[yr]['gas']   += (p['gas_savings']   or 0)
+        savings_by_year[yr]['steam'] += (p['steam_savings'] or 0)
+        savings_by_year[yr]['oil2']  += (p['oil2_savings']  or 0)
+        savings_by_year[yr]['oil4']  += (p['oil4_savings']  or 0)
+
+    # Period start years
+    period_starts = {
+        '2024_2029': 2024,
+        '2030_2034': 2030,
+        '2035_2039': 2035,
+        '2040_2049': 2040,
+        '2050_plus': 2050,
+    }
+
+    total_floor_area = sum(og['floor_area'] for og in occupancy_groups) or 1
+    results = {}
+    for period in COMPLIANCE_PERIODS:
+        start_year = period_starts[period]
+        # Accumulate all measure savings up to (but not including) this period's start
+        cumulative = dict(elec=0, gas=0, steam=0, oil2=0, oil4=0)
+        for yr, savings in savings_by_year.items():
+            if yr < start_year:
+                for k in cumulative:
+                    cumulative[k] += savings[k]
+        # Adjust energy by cumulative savings
+        adj = {
+            'electricity_kwh':    max(0, (energy.get('electricity_kwh')    or 0) - cumulative['elec']),
+            'natural_gas_therms': max(0, (energy.get('natural_gas_therms') or 0) - cumulative['gas']),
+            'district_steam_mlb': max(0, (energy.get('district_steam_mlb') or 0) - cumulative['steam']),
+            'fuel_oil_2_gal':     max(0, (energy.get('fuel_oil_2_gal')     or 0) - cumulative['oil2']),
+            'fuel_oil_4_gal':     max(0, (energy.get('fuel_oil_4_gal')     or 0) - cumulative['oil4']),
+        }
+        period_emissions = calculate_emissions(adj, utility_factors)[period]
+        emissions_adj = period_emissions['total']
+        limit = calculate_limit(occupancy_groups, period)
+        overage = max(0, emissions_adj - limit)
+        penalty = calculate_penalty(emissions_adj, limit)
+        results[period] = {
+            'label':      PERIOD_LABELS[period],
+            'emissions':  round(emissions_adj, 4),
+            'limit':      round(limit, 4),
+            'overage':    round(overage, 4),
+            'penalty':    round(penalty, 2),
+            'compliant':  emissions_adj <= limit,
+            'intensity_kg':       round(emissions_adj / total_floor_area * 1000, 4),
+            'limit_intensity_kg': round(limit          / total_floor_area * 1000, 4),
+            'breakdown':  period_emissions['breakdown'],
+        }
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.route('/')
 def index():
-    return render_template('index.html',
+    return redirect('/select-building')
+
+
+@app.route('/select-building')
+def select_building_page():
+    return render_template('select_building.html',
         espm_property_types=ESPM_PROPERTY_TYPES,
         period_labels=PERIOD_LABELS,
         compliance_periods=COMPLIANCE_PERIODS,
     )
+
+
+@app.route('/calculate')
+def calculate_page():
+    return render_template('calculate_result.html',
+        compliance_periods=COMPLIANCE_PERIODS,
+        period_labels=PERIOD_LABELS,
+    )
+
+
+@app.route('/portfolio')
+def portfolio_page():
+    return render_template('portfolio.html')
 
 
 @app.route('/manage')
@@ -334,7 +456,7 @@ def reset_price_settings():
 
 @app.route('/saved-buildings')
 def saved_buildings_page():
-    return render_template('saved_buildings.html')
+    return redirect('/portfolio')
 
 
 @app.route('/api/saved-buildings')
@@ -342,9 +464,10 @@ def list_saved_buildings():
     if not os.path.exists(SAVED_DB_PATH):
         return jsonify({'buildings': []})
     conn = get_saved_db_connection()
+    create_saved_tables(conn)
     rows = conn.execute(
         'SELECT save_name, property_name, address, borough, postcode, '
-        'gross_floor_area, saved_at FROM saved_buildings ORDER BY saved_at DESC'
+        'gross_floor_area, saved_at, selected_scenario_id FROM saved_buildings ORDER BY saved_at DESC'
     ).fetchall()
     conn.close()
     return jsonify({'buildings': [dict(r) for r in rows]})
@@ -355,6 +478,7 @@ def get_saved_building(name):
     if not os.path.exists(SAVED_DB_PATH):
         return jsonify({'error': 'Not found'}), 404
     conn = get_saved_db_connection()
+    create_saved_tables(conn)
     row = conn.execute(
         'SELECT * FROM saved_buildings WHERE save_name = ?', (name,)
     ).fetchone()
@@ -366,7 +490,218 @@ def get_saved_building(name):
         d['occupancy_groups'] = json.loads(d.get('occupancy_groups') or '[]')
     except Exception:
         d['occupancy_groups'] = []
+    try:
+        d['compliance_cache'] = json.loads(d.get('compliance_cache') or 'null')
+    except Exception:
+        d['compliance_cache'] = None
     return jsonify({'building': d})
+
+
+@app.route('/api/buildings/<path:name>/select-scenario', methods=['POST'])
+def set_selected_scenario(name):
+    """Set (or clear) the selected scenario for a saved building."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    scenario_id = data.get('scenario_id')  # None/null to unstar
+
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    row = conn.execute('SELECT * FROM saved_buildings WHERE save_name = ?', (name,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Building not found'}), 404
+
+    conn.execute(
+        'UPDATE saved_buildings SET selected_scenario_id = ? WHERE save_name = ?',
+        (scenario_id, name)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'selected_scenario_id': scenario_id})
+
+
+@app.route('/api/portfolio')
+def get_portfolio():
+    """Return all saved buildings with baseline compliance cache + selected scenario info."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'buildings': []})
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    rows = conn.execute(
+        'SELECT * FROM saved_buildings ORDER BY saved_at DESC'
+    ).fetchall()
+
+    buildings = []
+    for row in rows:
+        b = dict(row)
+        try:
+            b['occupancy_groups'] = json.loads(b.get('occupancy_groups') or '[]')
+        except Exception:
+            b['occupancy_groups'] = []
+        try:
+            b['compliance_cache'] = json.loads(b.get('compliance_cache') or 'null')
+        except Exception:
+            b['compliance_cache'] = None
+
+        # Compute scenario compliance if a selected scenario exists
+        b['selected_scenario_compliance'] = None
+        if b.get('selected_scenario_id'):
+            try:
+                energy = {
+                    'electricity_kwh':    b.get('electricity_kwh')    or 0,
+                    'natural_gas_therms': b.get('natural_gas_therms') or 0,
+                    'district_steam_mlb': b.get('district_steam_mlb') or 0,
+                    'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+                    'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+                }
+                scen_row = conn.execute(
+                    'SELECT name FROM scenarios WHERE id = ?', (b['selected_scenario_id'],)
+                ).fetchone()
+                b['selected_scenario_name'] = scen_row['name'] if scen_row else None
+                b['selected_scenario_compliance'] = _compute_scenario_period_compliance(
+                    energy, b['occupancy_groups'], b['selected_scenario_id'], conn
+                )
+            except Exception:
+                pass
+
+        # Fill in missing compliance_cache from stored building data
+        if b['compliance_cache'] is None:
+            occ = b['occupancy_groups']
+            energy = {
+                'electricity_kwh':    b.get('electricity_kwh')    or 0,
+                'natural_gas_therms': b.get('natural_gas_therms') or 0,
+                'district_steam_mlb': b.get('district_steam_mlb') or 0,
+                'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+                'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+            }
+            if occ and any(v > 0 for v in energy.values()):
+                try:
+                    cache = _compute_building_compliance(energy, occ)
+                    b['compliance_cache'] = cache
+                    conn.execute(
+                        'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+                        (json.dumps(cache), b['save_name'])
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+
+        buildings.append(b)
+    conn.close()
+    return jsonify({'buildings': buildings})
+
+
+@app.route('/api/portfolio/recalculate-all', methods=['POST'])
+def recalculate_portfolio():
+    """Recompute compliance_cache for every building from its stored energy/occupancy data."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'status': 'ok', 'updated': 0})
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    rows = conn.execute('SELECT * FROM saved_buildings').fetchall()
+    updated = 0
+    for row in rows:
+        b = dict(row)
+        try:
+            occ = json.loads(b.get('occupancy_groups') or '[]')
+        except Exception:
+            occ = []
+        energy = {
+            'electricity_kwh':    b.get('electricity_kwh')    or 0,
+            'natural_gas_therms': b.get('natural_gas_therms') or 0,
+            'district_steam_mlb': b.get('district_steam_mlb') or 0,
+            'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+            'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+        }
+        if occ and any(v > 0 for v in energy.values()):
+            try:
+                cache = _compute_building_compliance(energy, occ)
+                conn.execute(
+                    'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+                    (json.dumps(cache), b['save_name'])
+                )
+                updated += 1
+            except Exception:
+                pass
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok', 'updated': updated})
+
+
+@app.route('/api/buildings/<path:name>/refresh-compliance', methods=['POST'])
+def refresh_building_compliance(name):
+    """Recompute and save compliance_cache for one building from its stored data."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    row = conn.execute('SELECT * FROM saved_buildings WHERE save_name = ?', (name,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    b = dict(row)
+    try:
+        occ = json.loads(b.get('occupancy_groups') or '[]')
+    except Exception:
+        occ = []
+    energy = {
+        'electricity_kwh':    b.get('electricity_kwh')    or 0,
+        'natural_gas_therms': b.get('natural_gas_therms') or 0,
+        'district_steam_mlb': b.get('district_steam_mlb') or 0,
+        'fuel_oil_2_gal':     b.get('fuel_oil_2_gal')     or 0,
+        'fuel_oil_4_gal':     b.get('fuel_oil_4_gal')     or 0,
+    }
+    if not occ or not any(v > 0 for v in energy.values()):
+        conn.close()
+        return jsonify({'error': 'Insufficient data'}), 400
+    try:
+        cache = _compute_building_compliance(energy, occ)
+        conn.execute(
+            'UPDATE saved_buildings SET compliance_cache = ? WHERE save_name = ?',
+            (json.dumps(cache), name)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok', 'compliance_cache': cache})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scenario-period-compliance', methods=['POST'])
+def scenario_period_compliance():
+    """Compute per-period compliance for a building under a given scenario."""
+    data = request.get_json()
+    scenario_id = data.get('scenario_id')
+    if not scenario_id:
+        return jsonify({'error': 'scenario_id required'}), 400
+
+    energy = {
+        'electricity_kwh':    _safe_float(data.get('electricity_kwh'))    or 0,
+        'natural_gas_therms': _safe_float(data.get('natural_gas_therms')) or 0,
+        'district_steam_mlb': _safe_float(data.get('district_steam_mlb')) or 0,
+        'fuel_oil_2_gal':     _safe_float(data.get('fuel_oil_2_gal'))     or 0,
+        'fuel_oil_4_gal':     _safe_float(data.get('fuel_oil_4_gal'))     or 0,
+    }
+    occupancy_groups = []
+    for og in (data.get('occupancy_groups') or []):
+        pt   = og.get('property_type', '').strip()
+        area = _safe_float(og.get('floor_area'))
+        if pt and area and area > 0:
+            occupancy_groups.append({'property_type': pt, 'floor_area': area})
+    if not occupancy_groups:
+        return jsonify({'error': 'occupancy_groups required'}), 400
+
+    conn = get_saved_db_connection()
+    result = _compute_scenario_period_compliance(energy, occupancy_groups, scenario_id, conn)
+    # Also fetch scenario name
+    scen_row = conn.execute('SELECT name FROM scenarios WHERE id = ?', (scenario_id,)).fetchone()
+    conn.close()
+    return jsonify({
+        'results': result,
+        'scenario_name': scen_row['name'] if scen_row else None,
+    })
 
 
 @app.route('/api/search')
@@ -535,6 +870,24 @@ def save_building():
         conn.close()
         return jsonify({'error': 'name_exists'}), 409
 
+    # Compute compliance cache at save time
+    occ_groups = b.get('occupancy_groups') or []
+    energy_for_cache = {
+        'electricity_kwh':    _safe_float(b.get('electricity_kwh'))    or 0,
+        'natural_gas_therms': _safe_float(b.get('natural_gas_therms')) or 0,
+        'district_steam_mlb': _safe_float(b.get('district_steam_mlb')) or 0,
+        'fuel_oil_2_gal':     _safe_float(b.get('fuel_oil_2_gal'))     or 0,
+        'fuel_oil_4_gal':     _safe_float(b.get('fuel_oil_4_gal'))     or 0,
+    }
+    compliance_cache_val = None
+    if occ_groups and any(energy_for_cache.values()):
+        try:
+            compliance_cache_val = json.dumps(
+                _compute_building_compliance(energy_for_cache, occ_groups)
+            )
+        except Exception:
+            pass
+
     row = {
         'save_name':          save_name,
         'source_bbl':         b.get('bbl') or '',
@@ -551,8 +904,9 @@ def save_building():
         'district_steam_mlb': _safe_float(b.get('district_steam_mlb')),
         'fuel_oil_2_gal':     _safe_float(b.get('fuel_oil_2_gal')),
         'fuel_oil_4_gal':     _safe_float(b.get('fuel_oil_4_gal')),
-        'occupancy_groups':   json.dumps(b.get('occupancy_groups') or []),
+        'occupancy_groups':   json.dumps(occ_groups),
         'reported_ghg':       _safe_float(b.get('reported_ghg')),
+        'compliance_cache':   compliance_cache_val,
     }
 
     if existing and overwrite:
@@ -566,7 +920,7 @@ def save_building():
                 electricity_kwh = :electricity_kwh, natural_gas_therms = :natural_gas_therms,
                 district_steam_mlb = :district_steam_mlb, fuel_oil_2_gal = :fuel_oil_2_gal,
                 fuel_oil_4_gal = :fuel_oil_4_gal, occupancy_groups = :occupancy_groups,
-                reported_ghg = :reported_ghg
+                reported_ghg = :reported_ghg, compliance_cache = :compliance_cache
             WHERE save_name = :save_name
         ''', row)
     else:
@@ -575,12 +929,14 @@ def save_building():
                 save_name, source_bbl, source_bin, property_name, address,
                 borough, postcode, year_ending, gross_floor_area, energy_star_score,
                 electricity_kwh, natural_gas_therms, district_steam_mlb,
-                fuel_oil_2_gal, fuel_oil_4_gal, occupancy_groups, reported_ghg
+                fuel_oil_2_gal, fuel_oil_4_gal, occupancy_groups, reported_ghg,
+                compliance_cache
             ) VALUES (
                 :save_name, :source_bbl, :source_bin, :property_name, :address,
                 :borough, :postcode, :year_ending, :gross_floor_area, :energy_star_score,
                 :electricity_kwh, :natural_gas_therms, :district_steam_mlb,
-                :fuel_oil_2_gal, :fuel_oil_4_gal, :occupancy_groups, :reported_ghg
+                :fuel_oil_2_gal, :fuel_oil_4_gal, :occupancy_groups, :reported_ghg,
+                :compliance_cache
             )
         ''', row)
 
@@ -787,8 +1143,16 @@ def get_scenarios():
         'WHERE building_save_name = ? ORDER BY number',
         (building,)
     ).fetchall()
+    # Find out which scenario is selected for this building
+    bldg_row = conn.execute(
+        'SELECT selected_scenario_id FROM saved_buildings WHERE save_name = ?', (building,)
+    ).fetchone()
+    selected_id = bldg_row['selected_scenario_id'] if bldg_row else None
     conn.close()
-    return jsonify({'scenarios': [dict(r) for r in rows]})
+    scenarios = [dict(r) for r in rows]
+    for s in scenarios:
+        s['is_selected'] = (s['id'] == selected_id)
+    return jsonify({'scenarios': scenarios, 'selected_scenario_id': selected_id})
 
 
 @app.route('/api/scenarios/<int:scenario_id>')
@@ -840,6 +1204,11 @@ def delete_scenario(scenario_id):
     if not scenario:
         conn.close()
         return jsonify({'error': 'Not found'}), 404
+    # Clear selected_scenario_id on the building if it points to this scenario
+    conn.execute(
+        'UPDATE saved_buildings SET selected_scenario_id = NULL WHERE selected_scenario_id = ?',
+        (scenario_id,)
+    )
     conn.execute('DELETE FROM scenario_measures WHERE scenario_id = ?', (scenario_id,))
     conn.execute('DELETE FROM scenarios WHERE id = ?', (scenario_id,))
     conn.commit()

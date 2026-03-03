@@ -11,20 +11,26 @@
 <!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
 <header class="site-header">
   <div class="header-inner">
-    <div class="header-logo">
-      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
-        <rect width="36" height="36" rx="8" fill="#1a5276"/>
-        <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-        <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      <div>
-        <div class="header-title">NYC LL97 Planner</div>
-        <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+    <div class="header-left-group">
+      <div class="header-logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="8" fill="#1a5276"/>
+          <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="header-title">NYC LL97 Planner</div>
+          <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+        </div>
       </div>
+      <nav class="header-nav-primary">
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/select-building" class="nav-link">Select Building</a>
+      </nav>
     </div>
     <nav class="header-nav">
       <div id="active-building-nav" class="active-building-nav"></div>
-      <a href="/" class="nav-link">Calculate</a>
+      <a href="/calculate" class="nav-link" id="calc-nav-link">Calculate</a>
       <!-- Manage dropdown — Reduction Plan is the active sub-item -->
       <div class="nav-dropdown" id="manage-nav-dropdown">
         <a href="/manage" class="nav-link active nav-dropdown-trigger" id="manage-nav-btn">
@@ -36,7 +42,6 @@
           <a href="/reduction-plan" class="nav-dropdown-item active">Reduction Plan</a>
         </div>
       </div>
-      <a href="/saved-buildings" class="nav-link">Saved Buildings</a>
       <a href="/settings" class="nav-link">&#9881; Settings</a>
     </nav>
   </div>
@@ -68,6 +73,7 @@
       <div class="rp-scenario-left">
         <span class="rp-scenario-label">Scenario:</span>
         <select id="rp-scenario-select" class="rp-scenario-select"></select>
+        <button id="rp-star-btn" class="btn btn-ghost btn-sm rp-star-btn" title="Mark as Selected Scenario for this building">&#9734;</button>
         <div class="rp-pencil-wrap" id="rp-pencil-wrap">
           <button id="rp-pencil-btn" class="btn btn-ghost btn-sm rp-pencil-btn" title="Scenario options">✎</button>
           <div id="rp-pencil-menu" class="rp-pencil-menu hidden">

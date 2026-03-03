@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Select Building — NYC LL97 Planner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-left-group">
+      <div class="header-logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="8" fill="#1a5276"/>
+          <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="header-title">NYC LL97 Planner</div>
+          <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+        </div>
+      </div>
+      <nav class="header-nav-primary">
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/select-building" class="nav-link active">Select Building</a>
+      </nav>
+    </div>
+    <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/calculate" class="nav-link nav-link-disabled" id="calc-nav-link" title="Calculate a building first">Calculate</a>
+      <!-- Manage dropdown — disabled until a building is saved/loaded -->
+      <div class="nav-dropdown disabled" id="manage-nav-dropdown" title="Save or Load a Saved Building to enable Manage">
+        <a href="/manage" class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <!-- ── BUILDING SEARCH + SELECTED ─────────────────────────────────────── -->
+  <section class="card" id="search-section">
+    <h2 class="card-title">Building Lookup <span class="badge badge-opt">Start Here</span></h2>
+    <p class="card-desc">Search the NYC LL84 benchmarking database by address, building name, BBL, or BIN to auto-populate energy data. Or enter data manually below.</p>
+    <div class="search-row">
+      <input type="text" id="search-input" class="form-input" placeholder="e.g. 123 Main St, Empire State Building, BBL, or BIN" autocomplete="off" />
+      <button class="btn btn-secondary" id="search-btn">Search</button>
+    </div>
+    <div id="search-results" class="search-results hidden"></div>
+    <div id="db-status-msg" class="info-msg hidden"></div>
+    <!-- Selected Building (compact, shown inside same card) -->
+    <div id="selected-building-section" class="selected-building-compact hidden">
+      <div class="selected-building-divider"></div>
+      <div class="bldg-info-grid" id="bldg-info-grid"></div>
+    </div>
+  </section>
+
+  <!-- ── ENERGY INPUTS ────────────────────────────────────────────────────── -->
+  <div class="two-col-energy">
+
+    <section class="card" id="energy-section">
+      <h2 class="card-title">Annual Energy Usage</h2>
+      <p class="card-desc">Enter the building's annual energy use. Prices are from <a href="/settings">Settings</a>.</p>
+
+      <div class="energy-usage-table">
+        <div class="eu-header">
+          <span>Fuel Type</span>
+          <span>Annual Usage</span>
+          <span>Price</span>
+          <span>Est. Annual Cost</span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="elec">Electricity <span class="unit">(kWh)</span></label>
+          <input type="number" id="elec" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-elec">—</span>
+          <span class="eu-cost" id="eu-cost-elec"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="gas">Natural Gas <span class="unit">(therms)</span></label>
+          <input type="number" id="gas" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-gas">—</span>
+          <span class="eu-cost" id="eu-cost-gas"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="steam">District Steam <span class="unit">(Mlb)</span><span class="help-icon" tabindex="0" role="note" data-tip="Mlb = thousand pounds of steam. Con Edison district steam is reported in Mlbs in ESPM and LL84 benchmarking data.">i</span></label>
+          <input type="number" id="steam" class="form-input eu-input" min="0" placeholder="0" step="0.001" />
+          <span class="eu-price" id="eu-price-steam">—</span>
+          <span class="eu-cost" id="eu-cost-steam"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="fo2">#2 Fuel Oil <span class="unit">(gal)</span></label>
+          <input type="number" id="fo2" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-fo2">—</span>
+          <span class="eu-cost" id="eu-cost-fo2"></span>
+        </div>
+
+        <div class="eu-row">
+          <label class="eu-label" for="fo4">#4 Fuel Oil <span class="unit">(gal)</span></label>
+          <input type="number" id="fo4" class="form-input eu-input" min="0" placeholder="0" />
+          <span class="eu-price" id="eu-price-fo4">—</span>
+          <span class="eu-cost" id="eu-cost-fo4"></span>
+        </div>
+
+        <div class="eu-total-row">
+          <span class="eu-total-label">Total Estimated Annual Energy Cost</span>
+          <span class="eu-total-cost" id="eu-cost-total">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── OCCUPANCY GROUPS ──────────────────────────────────────────────── -->
+    <section class="card" id="occupancy-section">
+      <h2 class="card-title">Building Occupancy &amp; Floor Area</h2>
+      <p class="card-desc">
+        Select up to 4 ESPM property types<span class="help-icon" tabindex="0" role="note" data-tip="ESPM = Energy Star Portfolio Manager. LL97 uses ESPM property types (not NYC Building Code occupancy groups) to determine your building's emission intensity limit. Required for compliance reporting from 2026 onward.">i</span> and enter the gross floor area for each.
+        The total floor area of all entries should equal the building's total gross floor area.
+        <br><em>Note: From 2026 onward, LL97 requires ESPM property types (not NYC Building Code occupancy groups).</em>
+      </p>
+
+      <div id="occupancy-groups">
+        <!-- rows inserted by JS -->
+      </div>
+
+      <button class="btn btn-ghost" id="add-occ-btn">+ Add Another Occupancy Type</button>
+    </section>
+  </div>
+
+  <!-- ── ACTION ROW ─────────────────────────────────────────────────────────── -->
+  <div class="calc-action-row">
+    <button class="btn btn-primary btn-lg" id="calculate-btn">Calculate LL97 Compliance</button>
+    <button class="btn btn-ghost" id="clear-btn">Clear</button>
+    <span id="save-to-portfolio-wrap" class="hidden">
+      <a href="#" id="save-to-portfolio-link" class="btn btn-save">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13.5 2H5L2 5v8.5A.5.5 0 002.5 14h11a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <rect x="5" y="2" width="5" height="4" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <rect x="4" y="9" width="8" height="5" rx=".5" stroke="currentColor" stroke-width="1.3" fill="none"/>
+        </svg>
+        Save Building to Portfolio
+      </a>
+    </span>
+    <span class="save-current-name" id="save-current-name"></span>
+  </div>
+
+  <div id="error-msg" class="error-msg hidden"></div>
+
+  <!-- ── SAVE MODAL ──────────────────────────────────────────────────────────── -->
+  <div id="save-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="save-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="save-modal-title">Save Building</h3>
+        <button class="modal-close" id="save-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="save-modal-body">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOAST ───────────────────────────────────────────────────────────────── -->
+  <div id="save-toast" class="save-toast hidden" role="status" aria-live="polite"></div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+    <p>Energy data source: <a href="https://data.cityofnewyork.us/Environment/NYC-Building-Energy-and-Water-Data-Disclosure-for-/5zyy-y8am" target="_blank" rel="noopener">NYC LL84 Benchmarking Dataset</a></p>
+  </div>
+</footer>
+
+<!-- ── ESPM TYPE DATA ────────────────────────────────────────────────────── -->
+<script>
+window.ESPM_PROPERTY_TYPES = {{ espm_property_types | tojson }};
+window.COMPLIANCE_PERIODS   = {{ compliance_periods | tojson }};
+window.PERIOD_LABELS         = {{ period_labels | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/select_building.js') }}"></script>
+</body>
+</html>
