@@ -179,6 +179,14 @@ def import_ll84_data(verbose=True, force=False):
                Use this when the database was imported with an older version of
                this code and is missing columns (e.g. *_floor_area fields).
     """
+    # If the database file already exists on disk, skip entirely (unless forced).
+    # This prevents unnecessary rebuilds during server deploys.
+    if not force and os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
+        if verbose:
+            print(f'll84.db already exists ({os.path.getsize(DB_PATH):,} bytes). Skipping import.')
+            print('To re-import with fresh data, run:  python app.py --reimport')
+        return -1
+
     conn = get_db_connection()
 
     if force:
@@ -189,7 +197,7 @@ def import_ll84_data(verbose=True, force=False):
 
     create_tables(conn)
 
-    # Check if data already exists
+    # Check if data already exists (belt-and-suspenders for newly created DBs)
     count = conn.execute('SELECT COUNT(*) FROM buildings').fetchone()[0]
     if count > 0:
         if verbose:
