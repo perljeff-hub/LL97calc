@@ -1814,7 +1814,8 @@ body {
 .pf-calc-link { white-space: nowrap; flex-shrink: 0; }
 
 /* ── CALCULATE RESULT PAGE ───────────────────────────────────────────────── */
-.cr-building-summary { position: relative; cursor: default; }
+.cr-building-summary { position: relative; cursor: default; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.cr-summary-info { min-width: 0; }
 .cr-summary-line1 {
   font-size: 1rem;
   font-weight: 700;
