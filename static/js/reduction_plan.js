@@ -567,6 +567,7 @@ async function saveMeasureEdit(id) {
     if (idx !== -1) measures[idx] = data.measure;
     editingMeasureId = null;
     renderMeasuresList();
+    updateSummaryTable();   // recolor year badges + refresh scenario summary
     showToast('Measure updated');
   } catch (e) {
     errEl.textContent = e.message;
