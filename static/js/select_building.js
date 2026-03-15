@@ -423,16 +423,19 @@ function setValue(id, val) {
 // ── SAVE-TO-PORTFOLIO LINK ────────────────────────────────────────────────────
 function updateSavePortfolioLink() {
   const wrap = document.getElementById('save-to-portfolio-wrap');
+  const topWrap = document.getElementById('top-save-to-portfolio-wrap');
   const nameEl = document.getElementById('save-current-name');
-  if (!wrap) return;
   if (currentSaveName) {
-    wrap.classList.add('hidden');
+    if (wrap) wrap.classList.add('hidden');
+    if (topWrap) topWrap.classList.add('hidden');
     if (nameEl) nameEl.textContent = `In Portfolio as: "${currentSaveName}"`;
   } else if (currentBuildingData) {
-    wrap.classList.remove('hidden');
+    if (wrap) wrap.classList.remove('hidden');
+    if (topWrap) topWrap.classList.remove('hidden');
     if (nameEl) nameEl.textContent = '';
   } else {
-    wrap.classList.add('hidden');
+    if (wrap) wrap.classList.add('hidden');
+    if (topWrap) topWrap.classList.add('hidden');
     if (nameEl) nameEl.textContent = '';
   }
 }
@@ -442,9 +445,16 @@ document.getElementById('save-to-portfolio-link').addEventListener('click', e =>
   openSaveModal();
 });
 
+document.getElementById('top-save-to-portfolio-link').addEventListener('click', e => {
+  e.preventDefault();
+  openSaveModal();
+});
+
 // ── CALCULATE → navigate to /calculate ───────────────────────────────────────
 document.getElementById('calculate-btn').addEventListener('click', runCalculationAndNavigate);
 document.getElementById('clear-btn').addEventListener('click', clearAll);
+document.getElementById('top-calculate-btn').addEventListener('click', runCalculationAndNavigate);
+document.getElementById('top-clear-btn').addEventListener('click', clearAll);
 
 async function runCalculationAndNavigate() {
   const errEl = document.getElementById('error-msg');
@@ -668,8 +678,12 @@ function esc(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&
 (async function init() {
   await loadEnergyPrices();
   const restored = restoreFormState();
-  if (!restored) addOccRow();
-  else updateEnergyCosts();
+  // If no named portfolio building is active, start with a clean form
+  if (!restored || !currentSaveName) {
+    clearAll();
+  } else {
+    updateEnergyCosts();
+  }
 
   document.getElementById('add-occ-btn').addEventListener('click', () => {
     const count = document.querySelectorAll('#occupancy-groups .occ-row').length;

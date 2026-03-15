@@ -87,6 +87,7 @@
       <select id="manage-scenario-select" class="manage-scenario-select">
         <option value="">None — Baseline Only</option>
       </select>
+      <button id="manage-star-btn" class="btn btn-ghost btn-sm rp-star-btn hidden" title="Mark as Selected Scenario for this building">&#9734;</button>
       <span id="manage-scenario-loading" class="manage-scenario-loading hidden">Computing…</span>
     </div>
 
@@ -94,6 +95,9 @@
       <canvas id="manage-chart"></canvas>
     </div>
   </section>
+
+  <!-- ── SCENARIO SUMMARY TABLE ───────────────────────────────────────────── -->
+  <div id="manage-scenario-summary" class="hidden"></div>
 
   <!-- ── FINANCIAL SUMMARY TABLE ────────────────────────────────────────── -->
   <div id="manage-fin-container" class="hidden"></div>
@@ -159,5 +163,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/manage.js') }}"></script>
+<script src="{{ url_for('static', filename='js/active_building_nav.js') }}"></script>
 </body>
 </html>

@@ -34,16 +34,18 @@ const FUEL_TO_ENERGY_KEY = {
   fuel_oil_4:     'fuel_oil_4_gal',
 };
 
-let manageChart          = null;
-let pricesConfig         = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
-let baseEnergyQty        = null;  // raw energy quantities from state
-let baseUtilityCostsByYr = [];    // per-year baseline costs (length 27)
-let cachedYears          = [];
-let cachedBaseFines      = [];
-let cachedScenData       = null;
-let cachedScenName       = '';
-let cachedScenId         = null;
-let showFuelDetail       = false;
+let manageChart              = null;
+let pricesConfig             = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
+let utilityFactors           = null;  // emission factors per period, from /api/settings/current
+let baseEnergyQty            = null;  // raw energy quantities from state
+let baseUtilityCostsByYr     = [];    // per-year baseline costs (length 27)
+let cachedYears              = [];
+let cachedBaseFines          = [];
+let cachedScenData           = null;
+let cachedScenName           = '';
+let cachedScenId             = null;
+let manageSelectedScenarioId = null;  // the building's "starred" selected scenario
+let showFuelDetail           = false;
 
 // ── CHART HTML TOOLTIP ────────────────────────────────────────────────────────
 
@@ -104,15 +106,16 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  // Fetch prices/escalators and run calculate in parallel
-  let calcData, pricesResp;
+  // Fetch prices/escalators, utility factors, and run calculate in parallel
+  let calcData, pricesResp, settingsResp;
   try {
-    [calcData, pricesResp] = await Promise.all([
+    [calcData, pricesResp, settingsResp] = await Promise.all([
       fetch('/api/calculate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).then(r => r.json()),
       fetch('/api/settings/prices').then(r => r.json()),
+      fetch('/api/settings/current').then(r => r.json()),
     ]);
     if (calcData.error) { showError(calcData.error); return; }
   } catch (e) {
@@ -120,7 +123,8 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  pricesConfig  = pricesResp.prices;  // {electricity_kwh: {price, escalator}, ...}
+  pricesConfig    = pricesResp.prices;    // {electricity_kwh: {price, escalator}, ...}
+  utilityFactors  = settingsResp.current; // {period: {electricity_kwh, natural_gas_kbtu, ...}}
   baseEnergyQty = {
     electricity_kwh:    parseFloat(state.form?.elec)  || 0,
     natural_gas_therms: parseFloat(state.form?.gas)   || 0,
@@ -131,30 +135,95 @@ document.addEventListener('DOMContentLoaded', async function init() {
   // Compute per-year baseline costs using escalating prices
   baseUtilityCostsByYr = computeBaselineCostsByYear();
 
-  buildChart(state.saveName, calcData.results);
-  buildFinancialTable();
-  loadScenarios(state.saveName, calcData.results, state);
+  // loadScenarios handles the initial render (baseline or scenario) in one shot
+  await loadScenarios(state.saveName, calcData.results, state);
 });
 
 // ── SCENARIO LOADER ───────────────────────────────────────────────────────────
 
 async function loadScenarios(buildingName, results, state) {
+  // Helper: fetch + render scenario data, returns true on success
+  async function fetchAndRenderScenario(scenarioId) {
+    const loadingEl = document.getElementById('manage-scenario-loading');
+    loadingEl.classList.remove('hidden');
+    try {
+      const compPayload = { ...buildCalcPayload(state), scenario_id: scenarioId };
+      const compResp = await fetch('/api/scenario-compute', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(compPayload),
+      });
+      const compData = await compResp.json();
+      if (!compResp.ok || compData.error) throw new Error(compData.error);
+      cachedScenData = compData.yearly_data;
+      cachedScenName = scenarioId === cachedScenId ? cachedScenName :
+        (scenariosRef.find(s => s.id === scenarioId)?.name || '');
+      cachedScenId   = scenarioId;
+      buildChart(buildingName, results, cachedScenData, cachedScenName);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return true;
+    } catch (_) {
+      cachedScenData = null; cachedScenName = ''; cachedScenId = null;
+      return false;
+    } finally {
+      loadingEl.classList.add('hidden');
+    }
+  }
+
+  // Shared reference so inner helpers can access the scenarios array
+  let scenariosRef = [];
+
   try {
     const resp = await fetch(`/api/scenarios?building=${encodeURIComponent(buildingName)}`);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return;
+    }
     const data = await resp.json();
-    const scenarios = data.scenarios || [];
-    if (!scenarios.length) return;
+    scenariosRef = data.scenarios || [];
 
-    const bar    = document.getElementById('manage-scenario-bar');
-    const select = document.getElementById('manage-scenario-select');
-    scenarios.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.name;
-      select.appendChild(opt);
-    });
+    if (!scenariosRef.length) {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return;
+    }
+
+    manageSelectedScenarioId = data.selected_scenario_id || null;
+
+    const bar     = document.getElementById('manage-scenario-bar');
+    const select  = document.getElementById('manage-scenario-select');
+    const starBtn = document.getElementById('manage-star-btn');
+
+    function rebuildOptions() {
+      const curVal = select.value;
+      [...select.options].forEach(o => { if (o.value !== '') o.remove(); });
+      scenariosRef.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name + (s.id === manageSelectedScenarioId ? ' ★' : '');
+        select.appendChild(opt);
+      });
+      if (curVal) select.value = curVal;
+    }
+
+    rebuildOptions();
     bar.classList.remove('hidden');
+
+    function updateStarBtn() {
+      if (!starBtn) return;
+      const scenarioId = parseInt(select.value, 10) || null;
+      if (!scenarioId) { starBtn.classList.add('hidden'); return; }
+      starBtn.classList.remove('hidden');
+      const isSelected = scenarioId === manageSelectedScenarioId;
+      starBtn.innerHTML = isSelected ? '&#9733;' : '&#9734;';
+      starBtn.title = isSelected
+        ? 'This is the Selected Scenario — click to unstar'
+        : 'Mark as Selected Scenario for this building';
+      starBtn.classList.toggle('rp-star-active', isSelected);
+    }
 
     // Check for scenario auto-select passed from Calculate page or Reduction Plan
     const storedScenId = localStorage.getItem('ll97_timeline_scenario_id') || localStorage.getItem('ll97_rp_scenario_id');
@@ -168,45 +237,63 @@ async function loadScenarios(buildingName, results, state) {
         autoSelectId = targetId;
       }
     }
+    updateStarBtn();
 
-    select.addEventListener('change', async () => {
-      const scenarioId = parseInt(select.value, 10) || null;
-      if (!scenarioId) {
-        cachedScenData = null;
-        cachedScenName = '';
+    // ── INITIAL RENDER (one shot — no flicker) ────────────────────────────
+    if (autoSelectId) {
+      cachedScenName = scenariosRef.find(s => s.id === autoSelectId)?.name || '';
+      const ok = await fetchAndRenderScenario(autoSelectId);
+      if (!ok) {
         buildChart(buildingName, results);
         buildFinancialTable();
-        return;
+        buildScenarioSummaryTable();
       }
-      const loadingEl = document.getElementById('manage-scenario-loading');
-      loadingEl.classList.remove('hidden');
-      try {
-        const compPayload = { ...buildCalcPayload(state), scenario_id: scenarioId };
-        const compResp = await fetch('/api/scenario-compute', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compPayload),
-        });
-        const compData = await compResp.json();
-        if (!compResp.ok || compData.error) throw new Error(compData.error);
-        cachedScenData = compData.yearly_data;
-        cachedScenName = scenarios.find(s => s.id === scenarioId)?.name || '';
-        cachedScenId   = scenarioId;
-        buildChart(buildingName, results, cachedScenData, cachedScenName);
-        buildFinancialTable();
-      } catch (e) {
+    } else {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+    }
+
+    // ── USER-TRIGGERED SCENARIO CHANGES ──────────────────────────────────
+    select.addEventListener('change', async () => {
+      updateStarBtn();
+      const scenarioId = parseInt(select.value, 10) || null;
+      if (!scenarioId) {
         cachedScenData = null; cachedScenName = ''; cachedScenId = null;
         buildChart(buildingName, results);
         buildFinancialTable();
-      } finally {
-        loadingEl.classList.add('hidden');
+        buildScenarioSummaryTable();
+        return;
       }
+      cachedScenName = scenariosRef.find(s => s.id === scenarioId)?.name || '';
+      await fetchAndRenderScenario(scenarioId);
     });
 
-    // Auto-trigger comparison chart for the pre-selected scenario
-    if (autoSelectId) {
-      select.dispatchEvent(new Event('change'));
+    if (starBtn) {
+      starBtn.addEventListener('click', async () => {
+        const scenarioId = parseInt(select.value, 10) || null;
+        if (!scenarioId) return;
+        const newSelectedId = (scenarioId === manageSelectedScenarioId) ? null : scenarioId;
+        try {
+          const resp2 = await fetch(`/api/buildings/${encodeURIComponent(buildingName)}/select-scenario`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario_id: newSelectedId }),
+          });
+          if (resp2.ok) {
+            manageSelectedScenarioId = newSelectedId;
+            rebuildOptions();
+            updateStarBtn();
+          }
+        } catch (_) { /* ignore */ }
+      });
     }
-  } catch (e) { /* scenarios optional */ }
+
+  } catch (_) {
+    buildChart(buildingName, results);
+    buildFinancialTable();
+    buildScenarioSummaryTable();
+  }
 
   // Store active scenario when navigating to Reduction Plan
   document.querySelectorAll('a[href="/reduction-plan"]').forEach(link => {
@@ -657,6 +744,157 @@ function buildFinTable(hasScen) {
   table.appendChild(tfoot);
 
   return table;
+}
+
+// ── SCENARIO SUMMARY TABLE ────────────────────────────────────────────────────
+
+function yearToPeriod(year) {
+  for (const { period, years } of PERIOD_YEAR_MAP) {
+    if (years.includes(year)) return period;
+  }
+  return '2050_plus';
+}
+
+function fmtN(n) {
+  if (n == null || n === 0) return '—';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
+
+function escStr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function buildScenarioSummaryTable() {
+  const container = document.getElementById('manage-scenario-summary');
+  if (!container) return;
+
+  if (!cachedScenData || !cachedScenData.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+
+  const activeRows = cachedScenData.filter(d => d.measure_names && d.measure_names.length > 0);
+  if (!activeRows.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.innerHTML = '';
+  container.classList.remove('hidden');
+
+  const section = document.createElement('section');
+  section.className = 'card wide-card';
+
+  const hdr = document.createElement('div');
+  hdr.innerHTML = `
+    <h2 class="card-title">Scenario Summary — ${escStr(cachedScenName)}</h2>
+    <p class="card-desc" style="margin-bottom:.75rem">
+      Years when measures are applied — one-time capital costs, incremental energy savings,
+      and estimated annual cost/carbon savings from that year forward.
+    </p>`;
+  section.appendChild(hdr);
+
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'rp-summary-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'rp-summary-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Measures Applied</th>
+        <th>One-Time Cost</th>
+        <th>Elec Savings <span class="th-unit">(kWh)</span></th>
+        <th>Gas Savings <span class="th-unit">(therms)</span></th>
+        <th>Steam Savings <span class="th-unit">(mLbs)</span></th>
+        <th>Oil #2 Savings <span class="th-unit">(gal)</span></th>
+        <th>Oil #4 Savings <span class="th-unit">(gal)</span></th>
+        <th>Energy Cost Savings <span class="th-unit">($)</span></th>
+        <th>Carbon Savings <span class="th-unit">(tCO₂e)</span></th>
+      </tr>
+    </thead>`;
+
+  const tbody = document.createElement('tbody');
+  const tots = { cost: 0, elec: 0, gas: 0, steam: 0, oil2: 0, oil4: 0, costSav: 0, carbSav: 0 };
+
+  activeRows.forEach(d => {
+    const sav = d.savings_in_year || {};
+    const cost = d.measure_cost || 0;
+    const offset = d.year - 2024;
+
+    // Annual energy cost savings for measures placed this year
+    let costSav = 0;
+    if (pricesConfig) {
+      const ep = k => {
+        const cfg = pricesConfig[k] || { price: 0, escalator: 0 };
+        return cfg.price * Math.pow(1 + cfg.escalator / 100, offset);
+      };
+      costSav =
+        (sav.elec  || 0) * ep('electricity_kwh') +
+        (sav.gas   || 0) * ep('natural_gas_therm') +
+        (sav.steam || 0) * ep('district_steam_mlb') +
+        (sav.oil2  || 0) * ep('fuel_oil_2_gal') +
+        (sav.oil4  || 0) * ep('fuel_oil_4_gal');
+    }
+
+    // Annual carbon savings for measures placed this year
+    let carbSav = 0;
+    if (utilityFactors) {
+      const ef = utilityFactors[yearToPeriod(d.year)] || {};
+      carbSav =
+        (sav.elec  || 0) * (ef.electricity_kwh     || 0) +
+        (sav.gas   || 0) * 100   * (ef.natural_gas_kbtu    || 0) +
+        (sav.steam || 0) * 1194  * (ef.district_steam_kbtu || 0) +
+        (sav.oil2  || 0) * 138.5 * (ef.fuel_oil_2_kbtu     || 0) +
+        (sav.oil4  || 0) * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+    }
+
+    tots.cost    += cost;
+    tots.elec    += sav.elec  || 0;
+    tots.gas     += sav.gas   || 0;
+    tots.steam   += sav.steam || 0;
+    tots.oil2    += sav.oil2  || 0;
+    tots.oil4    += sav.oil4  || 0;
+    tots.costSav += costSav;
+    tots.carbSav += carbSav;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="rp-sum-year">${d.year}</td>` +
+      `<td>${d.measure_names.map(escStr).join(', ')}</td>` +
+      `<td class="rp-sum-cost">${cost ? '$' + Math.round(cost).toLocaleString('en-US') : '—'}</td>` +
+      `<td>${fmtN(sav.elec)}</td>` +
+      `<td>${fmtN(sav.gas)}</td>` +
+      `<td>${fmtN(sav.steam)}</td>` +
+      `<td>${fmtN(sav.oil2)}</td>` +
+      `<td>${fmtN(sav.oil4)}</td>` +
+      `<td>${costSav > 0 ? '$' + Math.round(costSav).toLocaleString('en-US') : '—'}</td>` +
+      `<td>${carbSav > 0.005 ? fmtN(carbSav) : '—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const tfoot = document.createElement('tfoot');
+  tfoot.innerHTML =
+    `<tr class="rp-sum-total">` +
+    `<td colspan="2">Total</td>` +
+    `<td>${tots.cost ? '<strong>$' + Math.round(tots.cost).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
+    `<td>${fmtN(tots.elec)}</td>` +
+    `<td>${fmtN(tots.gas)}</td>` +
+    `<td>${fmtN(tots.steam)}</td>` +
+    `<td>${fmtN(tots.oil2)}</td>` +
+    `<td>${fmtN(tots.oil4)}</td>` +
+    `<td>${tots.costSav > 0 ? '<strong>$' + Math.round(tots.costSav).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
+    `<td>${tots.carbSav > 0.005 ? '<strong>' + fmtN(tots.carbSav) + '</strong>' : '—'}</td>` +
+    `</tr>`;
+
+  table.appendChild(tbody);
+  table.appendChild(tfoot);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  container.appendChild(section);
 }
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────────
