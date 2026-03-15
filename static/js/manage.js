@@ -135,33 +135,72 @@ document.addEventListener('DOMContentLoaded', async function init() {
   // Compute per-year baseline costs using escalating prices
   baseUtilityCostsByYr = computeBaselineCostsByYear();
 
-  buildChart(state.saveName, calcData.results);
-  buildFinancialTable();
-  loadScenarios(state.saveName, calcData.results, state);
+  // loadScenarios handles the initial render (baseline or scenario) in one shot
+  await loadScenarios(state.saveName, calcData.results, state);
 });
 
 // ── SCENARIO LOADER ───────────────────────────────────────────────────────────
 
 async function loadScenarios(buildingName, results, state) {
+  // Helper: fetch + render scenario data, returns true on success
+  async function fetchAndRenderScenario(scenarioId) {
+    const loadingEl = document.getElementById('manage-scenario-loading');
+    loadingEl.classList.remove('hidden');
+    try {
+      const compPayload = { ...buildCalcPayload(state), scenario_id: scenarioId };
+      const compResp = await fetch('/api/scenario-compute', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(compPayload),
+      });
+      const compData = await compResp.json();
+      if (!compResp.ok || compData.error) throw new Error(compData.error);
+      cachedScenData = compData.yearly_data;
+      cachedScenName = scenarioId === cachedScenId ? cachedScenName :
+        (scenariosRef.find(s => s.id === scenarioId)?.name || '');
+      cachedScenId   = scenarioId;
+      buildChart(buildingName, results, cachedScenData, cachedScenName);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return true;
+    } catch (_) {
+      cachedScenData = null; cachedScenName = ''; cachedScenId = null;
+      return false;
+    } finally {
+      loadingEl.classList.add('hidden');
+    }
+  }
+
+  // Shared reference so inner helpers can access the scenarios array
+  let scenariosRef = [];
+
   try {
     const resp = await fetch(`/api/scenarios?building=${encodeURIComponent(buildingName)}`);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return;
+    }
     const data = await resp.json();
-    const scenarios = data.scenarios || [];
-    if (!scenarios.length) return;
+    scenariosRef = data.scenarios || [];
+
+    if (!scenariosRef.length) {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+      return;
+    }
 
     manageSelectedScenarioId = data.selected_scenario_id || null;
 
-    const bar      = document.getElementById('manage-scenario-bar');
-    const select   = document.getElementById('manage-scenario-select');
-    const starBtn  = document.getElementById('manage-star-btn');
+    const bar     = document.getElementById('manage-scenario-bar');
+    const select  = document.getElementById('manage-scenario-select');
+    const starBtn = document.getElementById('manage-star-btn');
 
     function rebuildOptions() {
-      // Preserve current selection
       const curVal = select.value;
-      // Remove any non-baseline options first
       [...select.options].forEach(o => { if (o.value !== '') o.remove(); });
-      scenarios.forEach(s => {
+      scenariosRef.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
         opt.textContent = s.name + (s.id === manageSelectedScenarioId ? ' ★' : '');
@@ -200,41 +239,34 @@ async function loadScenarios(buildingName, results, state) {
     }
     updateStarBtn();
 
+    // ── INITIAL RENDER (one shot — no flicker) ────────────────────────────
+    if (autoSelectId) {
+      cachedScenName = scenariosRef.find(s => s.id === autoSelectId)?.name || '';
+      const ok = await fetchAndRenderScenario(autoSelectId);
+      if (!ok) {
+        buildChart(buildingName, results);
+        buildFinancialTable();
+        buildScenarioSummaryTable();
+      }
+    } else {
+      buildChart(buildingName, results);
+      buildFinancialTable();
+      buildScenarioSummaryTable();
+    }
+
+    // ── USER-TRIGGERED SCENARIO CHANGES ──────────────────────────────────
     select.addEventListener('change', async () => {
       updateStarBtn();
       const scenarioId = parseInt(select.value, 10) || null;
       if (!scenarioId) {
-        cachedScenData = null;
-        cachedScenName = '';
+        cachedScenData = null; cachedScenName = ''; cachedScenId = null;
         buildChart(buildingName, results);
         buildFinancialTable();
         buildScenarioSummaryTable();
         return;
       }
-      const loadingEl = document.getElementById('manage-scenario-loading');
-      loadingEl.classList.remove('hidden');
-      try {
-        const compPayload = { ...buildCalcPayload(state), scenario_id: scenarioId };
-        const compResp = await fetch('/api/scenario-compute', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compPayload),
-        });
-        const compData = await compResp.json();
-        if (!compResp.ok || compData.error) throw new Error(compData.error);
-        cachedScenData = compData.yearly_data;
-        cachedScenName = scenarios.find(s => s.id === scenarioId)?.name || '';
-        cachedScenId   = scenarioId;
-        buildChart(buildingName, results, cachedScenData, cachedScenName);
-        buildFinancialTable();
-        buildScenarioSummaryTable();
-      } catch (e) {
-        cachedScenData = null; cachedScenName = ''; cachedScenId = null;
-        buildChart(buildingName, results);
-        buildFinancialTable();
-        buildScenarioSummaryTable();
-      } finally {
-        loadingEl.classList.add('hidden');
-      }
+      cachedScenName = scenariosRef.find(s => s.id === scenarioId)?.name || '';
+      await fetchAndRenderScenario(scenarioId);
     });
 
     if (starBtn) {
@@ -257,11 +289,11 @@ async function loadScenarios(buildingName, results, state) {
       });
     }
 
-    // Auto-trigger comparison chart for the pre-selected scenario
-    if (autoSelectId) {
-      select.dispatchEvent(new Event('change'));
-    }
-  } catch (e) { /* scenarios optional */ }
+  } catch (_) {
+    buildChart(buildingName, results);
+    buildFinancialTable();
+    buildScenarioSummaryTable();
+  }
 
   // Store active scenario when navigating to Reduction Plan
   document.querySelectorAll('a[href="/reduction-plan"]').forEach(link => {
