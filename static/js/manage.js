@@ -36,6 +36,7 @@ const FUEL_TO_ENERGY_KEY = {
 
 let manageChart          = null;
 let pricesConfig         = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
+let utilityFactors       = null;  // emission factors per period, from /api/settings/current
 let baseEnergyQty        = null;  // raw energy quantities from state
 let baseUtilityCostsByYr = [];    // per-year baseline costs (length 27)
 let cachedYears          = [];
@@ -104,15 +105,16 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  // Fetch prices/escalators and run calculate in parallel
-  let calcData, pricesResp;
+  // Fetch prices/escalators, utility factors, and run calculate in parallel
+  let calcData, pricesResp, settingsResp;
   try {
-    [calcData, pricesResp] = await Promise.all([
+    [calcData, pricesResp, settingsResp] = await Promise.all([
       fetch('/api/calculate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).then(r => r.json()),
       fetch('/api/settings/prices').then(r => r.json()),
+      fetch('/api/settings/current').then(r => r.json()),
     ]);
     if (calcData.error) { showError(calcData.error); return; }
   } catch (e) {
@@ -120,7 +122,8 @@ document.addEventListener('DOMContentLoaded', async function init() {
     return;
   }
 
-  pricesConfig  = pricesResp.prices;  // {electricity_kwh: {price, escalator}, ...}
+  pricesConfig    = pricesResp.prices;    // {electricity_kwh: {price, escalator}, ...}
+  utilityFactors  = settingsResp.current; // {period: {electricity_kwh, natural_gas_kbtu, ...}}
   baseEnergyQty = {
     electricity_kwh:    parseFloat(state.form?.elec)  || 0,
     natural_gas_therms: parseFloat(state.form?.gas)   || 0,
@@ -176,6 +179,7 @@ async function loadScenarios(buildingName, results, state) {
         cachedScenName = '';
         buildChart(buildingName, results);
         buildFinancialTable();
+        buildScenarioSummaryTable();
         return;
       }
       const loadingEl = document.getElementById('manage-scenario-loading');
@@ -193,10 +197,12 @@ async function loadScenarios(buildingName, results, state) {
         cachedScenId   = scenarioId;
         buildChart(buildingName, results, cachedScenData, cachedScenName);
         buildFinancialTable();
+        buildScenarioSummaryTable();
       } catch (e) {
         cachedScenData = null; cachedScenName = ''; cachedScenId = null;
         buildChart(buildingName, results);
         buildFinancialTable();
+        buildScenarioSummaryTable();
       } finally {
         loadingEl.classList.add('hidden');
       }
@@ -657,6 +663,157 @@ function buildFinTable(hasScen) {
   table.appendChild(tfoot);
 
   return table;
+}
+
+// ── SCENARIO SUMMARY TABLE ────────────────────────────────────────────────────
+
+function yearToPeriod(year) {
+  for (const { period, years } of PERIOD_YEAR_MAP) {
+    if (years.includes(year)) return period;
+  }
+  return '2050_plus';
+}
+
+function fmtN(n) {
+  if (n == null || n === 0) return '—';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
+
+function escStr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function buildScenarioSummaryTable() {
+  const container = document.getElementById('manage-scenario-summary');
+  if (!container) return;
+
+  if (!cachedScenData || !cachedScenData.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+
+  const activeRows = cachedScenData.filter(d => d.measure_names && d.measure_names.length > 0);
+  if (!activeRows.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.innerHTML = '';
+  container.classList.remove('hidden');
+
+  const section = document.createElement('section');
+  section.className = 'card wide-card';
+
+  const hdr = document.createElement('div');
+  hdr.innerHTML = `
+    <h2 class="card-title">Scenario Summary — ${escStr(cachedScenName)}</h2>
+    <p class="card-desc" style="margin-bottom:.75rem">
+      Years when measures are applied — one-time capital costs, incremental energy savings,
+      and estimated annual cost/carbon savings from that year forward.
+    </p>`;
+  section.appendChild(hdr);
+
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'rp-summary-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'rp-summary-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Measures Applied</th>
+        <th>One-Time Cost</th>
+        <th>Elec Savings <span class="th-unit">(kWh)</span></th>
+        <th>Gas Savings <span class="th-unit">(therms)</span></th>
+        <th>Steam Savings <span class="th-unit">(mLbs)</span></th>
+        <th>Oil #2 Savings <span class="th-unit">(gal)</span></th>
+        <th>Oil #4 Savings <span class="th-unit">(gal)</span></th>
+        <th>Energy Cost Savings <span class="th-unit">($)</span></th>
+        <th>Carbon Savings <span class="th-unit">(tCO₂e)</span></th>
+      </tr>
+    </thead>`;
+
+  const tbody = document.createElement('tbody');
+  const tots = { cost: 0, elec: 0, gas: 0, steam: 0, oil2: 0, oil4: 0, costSav: 0, carbSav: 0 };
+
+  activeRows.forEach(d => {
+    const sav = d.savings_in_year || {};
+    const cost = d.measure_cost || 0;
+    const offset = d.year - 2024;
+
+    // Annual energy cost savings for measures placed this year
+    let costSav = 0;
+    if (pricesConfig) {
+      const ep = k => {
+        const cfg = pricesConfig[k] || { price: 0, escalator: 0 };
+        return cfg.price * Math.pow(1 + cfg.escalator / 100, offset);
+      };
+      costSav =
+        (sav.elec  || 0) * ep('electricity_kwh') +
+        (sav.gas   || 0) * ep('natural_gas_therm') +
+        (sav.steam || 0) * ep('district_steam_mlb') +
+        (sav.oil2  || 0) * ep('fuel_oil_2_gal') +
+        (sav.oil4  || 0) * ep('fuel_oil_4_gal');
+    }
+
+    // Annual carbon savings for measures placed this year
+    let carbSav = 0;
+    if (utilityFactors) {
+      const ef = utilityFactors[yearToPeriod(d.year)] || {};
+      carbSav =
+        (sav.elec  || 0) * (ef.electricity_kwh     || 0) +
+        (sav.gas   || 0) * 100   * (ef.natural_gas_kbtu    || 0) +
+        (sav.steam || 0) * 1194  * (ef.district_steam_kbtu || 0) +
+        (sav.oil2  || 0) * 138.5 * (ef.fuel_oil_2_kbtu     || 0) +
+        (sav.oil4  || 0) * 146.0 * (ef.fuel_oil_4_kbtu     || 0);
+    }
+
+    tots.cost    += cost;
+    tots.elec    += sav.elec  || 0;
+    tots.gas     += sav.gas   || 0;
+    tots.steam   += sav.steam || 0;
+    tots.oil2    += sav.oil2  || 0;
+    tots.oil4    += sav.oil4  || 0;
+    tots.costSav += costSav;
+    tots.carbSav += carbSav;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="rp-sum-year">${d.year}</td>` +
+      `<td>${d.measure_names.map(escStr).join(', ')}</td>` +
+      `<td class="rp-sum-cost">${cost ? '$' + Math.round(cost).toLocaleString('en-US') : '—'}</td>` +
+      `<td>${fmtN(sav.elec)}</td>` +
+      `<td>${fmtN(sav.gas)}</td>` +
+      `<td>${fmtN(sav.steam)}</td>` +
+      `<td>${fmtN(sav.oil2)}</td>` +
+      `<td>${fmtN(sav.oil4)}</td>` +
+      `<td>${costSav > 0 ? '$' + Math.round(costSav).toLocaleString('en-US') : '—'}</td>` +
+      `<td>${carbSav > 0.005 ? fmtN(carbSav) : '—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const tfoot = document.createElement('tfoot');
+  tfoot.innerHTML =
+    `<tr class="rp-sum-total">` +
+    `<td colspan="2">Total</td>` +
+    `<td>${tots.cost ? '<strong>$' + Math.round(tots.cost).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
+    `<td>${fmtN(tots.elec)}</td>` +
+    `<td>${fmtN(tots.gas)}</td>` +
+    `<td>${fmtN(tots.steam)}</td>` +
+    `<td>${fmtN(tots.oil2)}</td>` +
+    `<td>${fmtN(tots.oil4)}</td>` +
+    `<td>${tots.costSav > 0 ? '<strong>$' + Math.round(tots.costSav).toLocaleString('en-US') + '</strong>' : '—'}</td>` +
+    `<td>${tots.carbSav > 0.005 ? '<strong>' + fmtN(tots.carbSav) + '</strong>' : '—'}</td>` +
+    `</tr>`;
+
+  table.appendChild(tbody);
+  table.appendChild(tfoot);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  container.appendChild(section);
 }
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────────

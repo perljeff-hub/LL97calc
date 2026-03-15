@@ -1350,6 +1350,7 @@ def scenario_compute():
             'energy_cost':  energy_costs,
             'measure_cost':  round(measure_cost_by_year.get(year, 0), 2),
             'measure_names': measure_names_by_year.get(year, []),
+            'savings_in_year': savings_by_year.get(year, {}),
         })
 
     return jsonify({'yearly_data': yearly_data})
