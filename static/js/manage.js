@@ -34,17 +34,18 @@ const FUEL_TO_ENERGY_KEY = {
   fuel_oil_4:     'fuel_oil_4_gal',
 };
 
-let manageChart          = null;
-let pricesConfig         = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
-let utilityFactors       = null;  // emission factors per period, from /api/settings/current
-let baseEnergyQty        = null;  // raw energy quantities from state
-let baseUtilityCostsByYr = [];    // per-year baseline costs (length 27)
-let cachedYears          = [];
-let cachedBaseFines      = [];
-let cachedScenData       = null;
-let cachedScenName       = '';
-let cachedScenId         = null;
-let showFuelDetail       = false;
+let manageChart              = null;
+let pricesConfig             = null;  // {fuel_key: {price, escalator}} from /api/settings/prices
+let utilityFactors           = null;  // emission factors per period, from /api/settings/current
+let baseEnergyQty            = null;  // raw energy quantities from state
+let baseUtilityCostsByYr     = [];    // per-year baseline costs (length 27)
+let cachedYears              = [];
+let cachedBaseFines          = [];
+let cachedScenData           = null;
+let cachedScenName           = '';
+let cachedScenId             = null;
+let manageSelectedScenarioId = null;  // the building's "starred" selected scenario
+let showFuelDetail           = false;
 
 // ── CHART HTML TOOLTIP ────────────────────────────────────────────────────────
 
@@ -149,15 +150,41 @@ async function loadScenarios(buildingName, results, state) {
     const scenarios = data.scenarios || [];
     if (!scenarios.length) return;
 
-    const bar    = document.getElementById('manage-scenario-bar');
-    const select = document.getElementById('manage-scenario-select');
-    scenarios.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.name;
-      select.appendChild(opt);
-    });
+    manageSelectedScenarioId = data.selected_scenario_id || null;
+
+    const bar      = document.getElementById('manage-scenario-bar');
+    const select   = document.getElementById('manage-scenario-select');
+    const starBtn  = document.getElementById('manage-star-btn');
+
+    function rebuildOptions() {
+      // Preserve current selection
+      const curVal = select.value;
+      // Remove any non-baseline options first
+      [...select.options].forEach(o => { if (o.value !== '') o.remove(); });
+      scenarios.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name + (s.id === manageSelectedScenarioId ? ' ★' : '');
+        select.appendChild(opt);
+      });
+      if (curVal) select.value = curVal;
+    }
+
+    rebuildOptions();
     bar.classList.remove('hidden');
+
+    function updateStarBtn() {
+      if (!starBtn) return;
+      const scenarioId = parseInt(select.value, 10) || null;
+      if (!scenarioId) { starBtn.classList.add('hidden'); return; }
+      starBtn.classList.remove('hidden');
+      const isSelected = scenarioId === manageSelectedScenarioId;
+      starBtn.innerHTML = isSelected ? '&#9733;' : '&#9734;';
+      starBtn.title = isSelected
+        ? 'This is the Selected Scenario — click to unstar'
+        : 'Mark as Selected Scenario for this building';
+      starBtn.classList.toggle('rp-star-active', isSelected);
+    }
 
     // Check for scenario auto-select passed from Calculate page or Reduction Plan
     const storedScenId = localStorage.getItem('ll97_timeline_scenario_id') || localStorage.getItem('ll97_rp_scenario_id');
@@ -171,8 +198,10 @@ async function loadScenarios(buildingName, results, state) {
         autoSelectId = targetId;
       }
     }
+    updateStarBtn();
 
     select.addEventListener('change', async () => {
+      updateStarBtn();
       const scenarioId = parseInt(select.value, 10) || null;
       if (!scenarioId) {
         cachedScenData = null;
@@ -207,6 +236,26 @@ async function loadScenarios(buildingName, results, state) {
         loadingEl.classList.add('hidden');
       }
     });
+
+    if (starBtn) {
+      starBtn.addEventListener('click', async () => {
+        const scenarioId = parseInt(select.value, 10) || null;
+        if (!scenarioId) return;
+        const newSelectedId = (scenarioId === manageSelectedScenarioId) ? null : scenarioId;
+        try {
+          const resp2 = await fetch(`/api/buildings/${encodeURIComponent(buildingName)}/select-scenario`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario_id: newSelectedId }),
+          });
+          if (resp2.ok) {
+            manageSelectedScenarioId = newSelectedId;
+            rebuildOptions();
+            updateStarBtn();
+          }
+        } catch (_) { /* ignore */ }
+      });
+    }
 
     // Auto-trigger comparison chart for the pre-selected scenario
     if (autoSelectId) {

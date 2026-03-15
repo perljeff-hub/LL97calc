@@ -153,7 +153,10 @@
       } else {
         localStorage.removeItem('ll97_timeline_scenario_id');
       }
-      window.location.href = '/calculate';
+      // Stay on the current page if it's a building-specific view, otherwise go to Calculate
+      const path = window.location.pathname;
+      const buildingPages = ['/calculate', '/manage', '/reduction-plan'];
+      window.location.href = buildingPages.includes(path) ? path : '/calculate';
     } catch (e) {
       alert('Could not load building: ' + e.message);
     }
