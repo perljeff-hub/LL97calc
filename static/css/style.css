@@ -272,6 +272,21 @@ body {
   padding: 1.5rem;
 }
 .wide-card { overflow-x: auto; }
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .4rem;
+  flex-wrap: wrap;
+}
+.card-title-row .card-title { margin-bottom: 0; }
+.card-title-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-shrink: 0;
+}
 .card-title {
   font-size: 1.05rem;
   font-weight: 700;
