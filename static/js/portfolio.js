@@ -93,7 +93,10 @@ function buildBuildingCard(b) {
       ${b.property_name && b.property_name !== b.save_name ? `<span class="pf-bldg-prop">${esc(b.property_name)}</span>` : ''}
       ${metaParts.length ? `<span class="pf-bldg-meta">${metaParts.join(' · ')}</span>` : ''}
     </div>
-    <a href="#" class="btn btn-ghost btn-sm pf-calc-link" data-name="${esc(b.save_name)}">Open in Calculate →</a>
+    <div class="pf-card-actions">
+      <a href="#" class="btn btn-ghost btn-sm pf-calc-link" data-name="${esc(b.save_name)}">Calculate Compliance</a>
+      <a href="#" class="btn btn-ghost btn-sm pf-manage-link" data-name="${esc(b.save_name)}">Manage Reduction Plans</a>
+    </div>
   `;
   card.appendChild(header);
 
@@ -162,64 +165,83 @@ function buildBuildingCard(b) {
     card.appendChild(noData);
   }
 
-  // Wire up the "Open in Calculate" link
+  // Wire up card action buttons
   card.querySelector('.pf-calc-link').addEventListener('click', e => {
     e.preventDefault();
     openBuildingInCalculate(b.save_name);
+  });
+  card.querySelector('.pf-manage-link').addEventListener('click', e => {
+    e.preventDefault();
+    openBuildingInTimeline(b.save_name);
   });
 
   return card;
 }
 
+async function loadBuildingToLocalStorage(saveName) {
+  const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(saveName));
+  if (!resp.ok) throw new Error('Building not found');
+  const data = await resp.json();
+  const b = data.building;
+  const occ = (b.occupancy_groups || []).map(g => ({
+    type: g.property_type,
+    area: String(g.floor_area),
+  }));
+  const buildingData = {
+    source:            'saved',
+    save_name:         b.save_name,
+    bbl:               b.source_bbl || '',
+    bin:               b.source_bin || '',
+    property_name:     b.property_name || '',
+    address:           b.address || '',
+    borough:           b.borough || '',
+    postcode:          b.postcode || '',
+    year_ending:       b.year_ending || '',
+    gross_floor_area:  b.gross_floor_area || null,
+    energy_star_score: b.energy_star_score || '',
+    electricity_kwh:   b.electricity_kwh || null,
+    natural_gas_therms: b.natural_gas_therms || null,
+    district_steam_mlb: b.district_steam_mlb || null,
+    fuel_oil_2_gal:    b.fuel_oil_2_gal || null,
+    fuel_oil_4_gal:    b.fuel_oil_4_gal || null,
+    occupancy_groups:  b.occupancy_groups || [],
+  };
+  const state = {
+    saveName:     b.save_name,
+    buildingData: buildingData,
+    isDirty:      false,
+    form: {
+      elec:  String(b.electricity_kwh    || ''),
+      gas:   String(b.natural_gas_therms  || ''),
+      steam: String(b.district_steam_mlb  || ''),
+      fo2:   String(b.fuel_oil_2_gal      || ''),
+      fo4:   String(b.fuel_oil_4_gal      || ''),
+    },
+    occRows: occ,
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  localStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: b.save_name }));
+  if (b.selected_scenario_id) {
+    localStorage.setItem('ll97_timeline_scenario_id', String(b.selected_scenario_id));
+  } else {
+    localStorage.removeItem('ll97_timeline_scenario_id');
+  }
+  return b;
+}
+
 async function openBuildingInCalculate(saveName) {
   try {
-    const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(saveName));
-    if (!resp.ok) throw new Error('Building not found');
-    const data = await resp.json();
-    const b = data.building;
-    const occ = (b.occupancy_groups || []).map(g => ({
-      type: g.property_type,
-      area: String(g.floor_area),
-    }));
-    const buildingData = {
-      source:            'saved',
-      save_name:         b.save_name,
-      bbl:               b.source_bbl || '',
-      bin:               b.source_bin || '',
-      property_name:     b.property_name || '',
-      address:           b.address || '',
-      borough:           b.borough || '',
-      postcode:          b.postcode || '',
-      year_ending:       b.year_ending || '',
-      gross_floor_area:  b.gross_floor_area || null,
-      energy_star_score: b.energy_star_score || '',
-      electricity_kwh:   b.electricity_kwh || null,
-      natural_gas_therms: b.natural_gas_therms || null,
-      district_steam_mlb: b.district_steam_mlb || null,
-      fuel_oil_2_gal:    b.fuel_oil_2_gal || null,
-      fuel_oil_4_gal:    b.fuel_oil_4_gal || null,
-      occupancy_groups:  b.occupancy_groups || [],
-    };
-    const state = {
-      saveName:     b.save_name,
-      buildingData: buildingData,
-      isDirty:      false,
-      form: {
-        elec:  String(b.electricity_kwh    || ''),
-        gas:   String(b.natural_gas_therms  || ''),
-        steam: String(b.district_steam_mlb  || ''),
-        fo2:   String(b.fuel_oil_2_gal      || ''),
-        fo4:   String(b.fuel_oil_4_gal      || ''),
-      },
-      occRows: occ,
-    };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(state));
-    localStorage.setItem(ACTIVE_KEY, JSON.stringify({ saveName: b.save_name }));
-    // Store selected scenario for Timeline
-    if (b.selected_scenario_id) {
-      localStorage.setItem('ll97_timeline_scenario_id', String(b.selected_scenario_id));
-    }
+    await loadBuildingToLocalStorage(saveName);
     window.location.href = '/calculate';
+  } catch (e) {
+    alert('Could not load building: ' + e.message);
+  }
+}
+
+async function openBuildingInTimeline(saveName) {
+  try {
+    await loadBuildingToLocalStorage(saveName);
+    window.location.href = '/manage';
   } catch (e) {
     alert('Could not load building: ' + e.message);
   }

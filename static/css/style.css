@@ -1822,7 +1822,8 @@ body {
 .pf-fine-bad    { color: var(--red);   font-weight: 600; }
 .pf-fine-better { color: #c07800;      font-weight: 600; }
 .pf-no-data { color: var(--gray-500); font-size: .875rem; margin-top: .25rem; font-style: italic; }
-.pf-calc-link { white-space: nowrap; flex-shrink: 0; }
+.pf-card-actions { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+.pf-calc-link, .pf-manage-link { white-space: nowrap; }
 
 /* ── CALCULATE RESULT PAGE ───────────────────────────────────────────────── */
 .cr-building-summary { position: relative; cursor: default; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
