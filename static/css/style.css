@@ -2235,6 +2235,9 @@ body {
 .bh-trend      { font-size: .72rem; vertical-align: middle; margin-left: .2rem; }
 .bh-trend-good { color: var(--green); }
 .bh-trend-bad  { color: var(--red); }
+.rp-trend      { font-size: .75rem; vertical-align: middle; margin-left: .25rem; cursor: default; }
+.rp-trend-good { color: var(--green); }
+.rp-trend-bad  { color: var(--red); }
 .bh-row-changed {
   background: #fffbe6 !important;
 }

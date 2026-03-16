@@ -75,9 +75,18 @@ function renderTable() {
 
     html += `<tr><td class="rp-td-building">${nameHtml}${subHtml}</td>`;
 
+    // Compute trend for most recent year with emissions data
+    const yearsWithEmissions = _years.filter(yr => bldg.year_data[yr] && bldg.year_data[yr].emissions != null);
+    const mostRecentYr = yearsWithEmissions.length > 0 ? yearsWithEmissions[yearsWithEmissions.length - 1] : null;
+    const prevYr       = yearsWithEmissions.length > 1 ? yearsWithEmissions[yearsWithEmissions.length - 2] : null;
+    const emissionsTrend = (mostRecentYr && prevYr)
+      ? bldg.year_data[mostRecentYr].emissions - bldg.year_data[prevYr].emissions
+      : null;
+
     for (const yr of _years) {
       const cell = bldg.year_data[yr];
-      html += renderCell(bldg.save_name, yr, cell);
+      const trend = yr === mostRecentYr ? emissionsTrend : null;
+      html += renderCell(bldg.save_name, yr, cell, trend);
     }
     html += '</tr>';
   }
@@ -100,10 +109,20 @@ function renderTable() {
   });
 }
 
-function renderCell(saveName, year, cell) {
+function renderCell(saveName, year, cell, trend) {
   if (!cell) {
     // No data — show add link
     return `<td class="rp-td-empty"><span class="rp-add-link" data-rp-add data-save-n="${esc(saveName)}" data-yr="${esc(year)}">+ Add</span></td>`;
+  }
+
+  // Trend indicator: red ▲ if emissions rose, green ▼ if they fell
+  let trendHtml = '';
+  if (trend != null && trend !== 0) {
+    const up   = trend > 0;
+    const cls  = up ? 'rp-trend-bad' : 'rp-trend-good';
+    const sym  = up ? '▲' : '▼';
+    const diff = fmtNum(Math.abs(trend), 0);
+    trendHtml  = ` <span class="rp-trend ${cls}" title="${up ? '+' : '−'}${diff} tCO₂e vs prior year">${sym}</span>`;
   }
 
   const emissions = cell.emissions != null ? fmtNum(cell.emissions, 0) + ' tCO₂e' : '—';
@@ -126,7 +145,7 @@ function renderCell(saveName, year, cell) {
     : '';
 
   return `<td class="rp-td-data${srcClass}${hasFine}">
-    <div class="rp-cell-emissions">${emissions}</div>
+    <div class="rp-cell-emissions">${emissions}${trendHtml}</div>
     <div class="rp-cell-fine">${fineHtml}</div>
     ${editHtml}
   </td>`;
