@@ -2201,6 +2201,7 @@ body {
   text-align: center;
   padding: .6rem .75rem;
   min-width: 120px;
+  max-width: 160px;
   font-weight: 600;
   color: var(--gray-700);
 }
@@ -2219,6 +2220,9 @@ body {
   padding: .55rem .75rem;
   text-align: center;
   font-size: .875rem;
+  max-width: 160px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .bh-td-emissions { font-weight: 600; }
 .bh-row-summary .bh-td-field { color: var(--gray-800); }
