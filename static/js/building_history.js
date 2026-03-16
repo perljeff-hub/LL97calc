@@ -53,7 +53,7 @@ function trendArrow(curr, prev, higherIsBetter) {
   return ` <span class="bh-trend ${cls}" title="${up ? '+' : '−'}${fmtNum(Math.abs(curr - prev), 1)} vs prior year">${sym}</span>`;
 }
 
-
+function formatFieldValue(key, val) {
   if (val == null) return '—';
   if (key === 'gross_floor_area' || key === 'electricity_kwh') return fmtNum(val, 0);
   if (key === 'natural_gas_therms' || key === 'fuel_oil_2_gal' || key === 'fuel_oil_4_gal') return fmtNum(val, 1);

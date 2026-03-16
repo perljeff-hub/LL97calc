@@ -200,5 +200,37 @@ document.getElementById('rp-modal-backdrop').addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeManualModal(); });
 
+// ── ACTIVE BUILDING CHIP ─────────────────────────────────────────────────────
+// Render the active-building chip from localStorage so the Historical
+// Performance page doesn't appear to "forget" the active building.
+function renderActiveBuildingChip() {
+  const nav = document.getElementById('active-building-nav');
+  if (!nav) return;
+  try {
+    const state = JSON.parse(localStorage.getItem('ll97_calc_state') || 'null');
+    if (!state || !state.saveName) return;
+    const r = state.buildingData || {};
+    const svgBuilding =
+      `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink:0">` +
+      `<rect x="3" y="4" width="10" height="11" rx=".5" stroke="currentColor" stroke-width="1.5"/>` +
+      `<rect x="5" y="6" width="2" height="2" rx=".3" fill="currentColor"/>` +
+      `<rect x="9" y="6" width="2" height="2" rx=".3" fill="currentColor"/>` +
+      `<rect x="5" y="10" width="2" height="2" rx=".3" fill="currentColor"/>` +
+      `<rect x="9" y="10" width="2" height="2" rx=".3" fill="currentColor"/>` +
+      `<path d="M6.5 15V12h3v3" stroke="currentColor" stroke-width="1.3" fill="none"/>` +
+      `<path d="M1 4l7-3 7 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>` +
+      `</svg>`;
+    let tipHtml = `<div class="abt-name">${esc(r.property_name || state.saveName)}</div>`;
+    if (r.address) tipHtml += `<div class="abt-row">${esc(r.address)}${r.borough ? ', ' + esc(r.borough) : ''}</div>`;
+    if (r.gross_floor_area) tipHtml += `<div class="abt-row"><strong>${Number(r.gross_floor_area).toLocaleString('en-US')}</strong> sq ft</div>`;
+    nav.innerHTML =
+      `<div class="active-building-chip-wrap">` +
+      `<span class="active-building-chip">${svgBuilding}<span class="active-building-chip-name">${esc(state.saveName)}</span></span>` +
+      `<div class="active-building-tooltip">${tipHtml}</div>` +
+      `</div>`;
+  } catch (e) { /* ignore */ }
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────────────
+renderActiveBuildingChip();
 loadData(false);
