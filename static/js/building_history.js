@@ -60,6 +60,62 @@ async function loadHistory() {
   }
 }
 
+function setActiveBuilding(bldg) {
+  const occ = (bldg.occupancy_groups || []).map(g => ({ type: g.property_type, area: String(g.floor_area) }));
+  const buildingData = {
+    source: 'saved',
+    save_name: bldg.save_name,
+    bbl: bldg.source_bbl || '',
+    bin: bldg.source_bin || '',
+    property_name: bldg.property_name || '',
+    address: bldg.address || '',
+    borough: bldg.borough || '',
+    postcode: bldg.postcode || '',
+    year_ending: bldg.year_ending || '',
+    gross_floor_area: bldg.gross_floor_area || null,
+    energy_star_score: bldg.energy_star_score || '',
+    electricity_kwh: bldg.electricity_kwh || null,
+    natural_gas_therms: bldg.natural_gas_therms || null,
+    district_steam_mlb: bldg.district_steam_mlb || null,
+    fuel_oil_2_gal: bldg.fuel_oil_2_gal || null,
+    fuel_oil_4_gal: bldg.fuel_oil_4_gal || null,
+    occupancy_groups: bldg.occupancy_groups || [],
+  };
+  const state = {
+    saveName: bldg.save_name,
+    buildingData: buildingData,
+    isDirty: false,
+    form: {
+      elec:  String(bldg.electricity_kwh    || ''),
+      gas:   String(bldg.natural_gas_therms  || ''),
+      steam: String(bldg.district_steam_mlb  || ''),
+      fo2:   String(bldg.fuel_oil_2_gal      || ''),
+      fo4:   String(bldg.fuel_oil_4_gal      || ''),
+    },
+    occRows: occ,
+  };
+  localStorage.setItem('ll97_calc_state', JSON.stringify(state));
+  localStorage.setItem('ll97_active', JSON.stringify({ saveName: bldg.save_name }));
+  if (bldg.selected_scenario_id) {
+    localStorage.setItem('ll97_timeline_scenario_id', String(bldg.selected_scenario_id));
+  } else {
+    localStorage.removeItem('ll97_timeline_scenario_id');
+  }
+
+  // Render the active-building chip in the header
+  const nav = document.getElementById('active-building-nav');
+  if (nav && bldg.save_name) {
+    const svgB = `<svg class="active-building-chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
+    const addrStr = [bldg.address, bldg.borough].filter(Boolean).join(', ');
+    const tipHtml = addrStr ? `<div class="active-building-tip-name">${esc(bldg.save_name)}</div><div class="active-building-tip-addr">${esc(addrStr)}</div>` : `<div class="active-building-tip-name">${esc(bldg.save_name)}</div>`;
+    nav.innerHTML =
+      `<div class="active-building-chip-wrap">` +
+      `<span class="active-building-chip">${svgB}<span class="active-building-chip-name">${esc(bldg.save_name)}</span></span>` +
+      `<div class="active-building-tooltip">${tipHtml}</div>` +
+      `</div>`;
+  }
+}
+
 function renderPage(data) {
   document.getElementById('bh-loading').classList.add('hidden');
 
@@ -68,9 +124,27 @@ function renderPage(data) {
   const yearData = data.year_data || {};
   const changedRows = new Set(data.changed_rows || []);
 
-  document.getElementById('bh-title').textContent = bldg.property_name || bldg.save_name || saveName;
-  const addrParts = [bldg.address, bldg.borough, bldg.postcode].filter(Boolean);
-  document.getElementById('bh-address').textContent = addrParts.join(', ');
+  // Set active building in localStorage and render nav chip
+  setActiveBuilding(bldg);
+
+  // Header: large text = save name; subtitle = LL84 property name + BBL + BIN from most recent year
+  document.getElementById('bh-title').textContent = bldg.save_name || saveName;
+  const sortedYrs = [...years].sort((a, b) => b - a);
+  let ll84PropName = null, ll84Bbl = null, ll84Bin = null;
+  for (const yr of sortedYrs) {
+    const yd = yearData[String(yr)];
+    if (yd && yd.source === 'll84' && yd.fields) {
+      ll84PropName = yd.fields.property_name || null;
+      ll84Bbl      = yd.fields.bbl || null;
+      ll84Bin      = yd.fields.bin || null;
+      break;
+    }
+  }
+  const subtitleParts = [];
+  if (ll84PropName) subtitleParts.push(ll84PropName);
+  if (ll84Bbl)      subtitleParts.push('BBL: ' + ll84Bbl);
+  if (ll84Bin)      subtitleParts.push('BIN: ' + ll84Bin);
+  document.getElementById('bh-address').textContent = subtitleParts.join(' · ');
 
   const table = document.getElementById('bh-table');
   let html = '<thead><tr><th class="bh-th-field">Field</th>';
