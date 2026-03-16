@@ -84,6 +84,41 @@
   </div>
 </footer>
 
+<!-- ── Search for missing data modal ─────────────────────────────────────── -->
+<div id="bh-search-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="bh-search-modal-title">
+  <div class="modal bh-search-modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="bh-search-modal-title">Search for data</span>
+      <button class="modal-close" id="bh-search-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="flex-direction:column;gap:.75rem">
+      <p class="bh-modal-desc" id="bh-search-modal-desc"></p>
+      <div class="search-row">
+        <input type="text" id="bh-search-input" class="form-input" placeholder="Search by address, property name, BBL, or BIN…" autocomplete="off" />
+        <button class="btn btn-primary btn-sm" id="bh-search-btn">Search</button>
+      </div>
+      <div id="bh-search-results" class="search-results hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Remove year confirmation modal ────────────────────────────────────── -->
+<div id="bh-remove-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="bh-remove-modal-title">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title" id="bh-remove-modal-title">Remove year data</span>
+      <button class="modal-close" id="bh-remove-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="flex-direction:column;gap:.75rem">
+      <p id="bh-remove-modal-desc"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="bh-remove-confirm-btn">Remove</button>
+      <button class="btn btn-ghost btn-sm" id="bh-remove-cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/building_history.js') }}"></script>
 <script src="{{ url_for('static', filename='js/active_building_nav.js') }}"></script>
 </body>

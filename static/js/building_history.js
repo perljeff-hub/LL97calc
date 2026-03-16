@@ -112,13 +112,15 @@ function renderChipFromStorage() {
 }
 renderChipFromStorage();
 
-
+// ── Page-level data (set by renderPage, used by modals) ─────────────────────
+let _pageData = null;
 
 async function loadHistory() {
   try {
     const resp = await fetch(`/api/building-history/${encodeURIComponent(saveName)}`);
     if (!resp.ok) throw new Error('Not found');
     const data = await resp.json();
+    _pageData = data;
     renderPage(data);
   } catch (e) {
     document.getElementById('bh-loading').classList.add('hidden');
@@ -186,7 +188,7 @@ function renderPage(data) {
   // Set active building in localStorage and render nav chip
   setActiveBuilding(bldg);
 
-  // Header: large text = save name; subtitle = LL84 property name + BBL + BIN from most recent year
+  // Header
   document.getElementById('bh-title').textContent = bldg.save_name || saveName;
   const sortedYrs = [...years].sort((a, b) => b - a);
   let ll84PropName = null, ll84Bbl = null, ll84Bin = null;
@@ -208,16 +210,17 @@ function renderPage(data) {
   const addrParts = [bldg.address, bldg.borough, bldg.postcode].filter(Boolean);
   document.getElementById('bh-address2').textContent = addrParts.join(', ');
 
+  // The most recent year with data (for trend arrows and no-remove-button)
+  const dataYears  = years.filter(yr => yearData[String(yr)] != null);
+  const latestYr   = dataYears.length > 0 ? dataYears[dataYears.length - 1] : null;
+  const prevYr     = dataYears.length > 1 ? dataYears[dataYears.length - 2] : null;
+
   const table = document.getElementById('bh-table');
   let html = '<thead><tr><th class="bh-th-field">Field</th>';
   for (const yr of years) {
     html += `<th class="bh-th-year">${esc(String(yr))}</th>`;
   }
   html += '</tr></thead><tbody>';
-
-  // Identify the most recent and second-most-recent years for trend indicators
-  const latestYr = years.length > 0 ? years[years.length - 1] : null;
-  const prevYr   = years.length > 1 ? years[years.length - 2] : null;
 
   // Summary rows (emissions + fine) at top
   html += buildSummaryRows(years, yearData, latestYr, prevYr);
@@ -241,13 +244,46 @@ function renderPage(data) {
         const valPrev = ydPrev && ydPrev.fields ? ydPrev.fields[fk] : null;
         cell += trendArrow(val, valPrev, TREND_FIELDS[fk]);
       }
-      html += `<td class="bh-td-val">${cell}</td>`;
+      if (yd == null) {
+        html += `<td class="bh-td-val bh-td-missing"></td>`;
+      } else {
+        html += `<td class="bh-td-val">${cell}</td>`;
+      }
     }
     html += '</tr>';
   }
 
+  // Action row: "Search for missing data" / "Remove from this building"
+  html += `<tr class="bh-action-row"><td class="bh-td-field bh-action-label"></td>`;
+  for (const yr of years) {
+    const yd = yearData[String(yr)];
+    if (yd == null) {
+      // Missing year — show "Search for missing data" link
+      html += `<td class="bh-td-val bh-td-missing">` +
+        `<button class="btn-link bh-search-link" data-year="${yr}">Search for missing data</button>` +
+        `</td>`;
+    } else if (yd.has_ph_record && yr !== latestYr) {
+      // Has a performance_history record and is not the most-recent year — allow removal
+      html += `<td class="bh-td-val">` +
+        `<button class="btn-link bh-remove-link" data-year="${yr}">Remove from this building</button>` +
+        `</td>`;
+    } else {
+      html += `<td class="bh-td-val"></td>`;
+    }
+  }
+  html += '</tr>';
+
   html += '</tbody>';
   table.innerHTML = html;
+
+  // Wire up search links
+  table.querySelectorAll('.bh-search-link').forEach(btn => {
+    btn.addEventListener('click', () => openSearchModal(parseInt(btn.dataset.year, 10)));
+  });
+  // Wire up remove links
+  table.querySelectorAll('.bh-remove-link').forEach(btn => {
+    btn.addEventListener('click', () => openRemoveModal(parseInt(btn.dataset.year, 10)));
+  });
 
   document.getElementById('bh-content').classList.remove('hidden');
 }
@@ -258,11 +294,15 @@ function buildSummaryRows(years, yearData, latestYr, prevYr) {
   const ydLatest = latestYr != null ? yearData[String(latestYr)] : null;
   const ydPrev   = prevYr   != null ? yearData[String(prevYr)]   : null;
 
-  // Reported / override emissions row
+  // GHG Emissions row
   html += '<tr class="bh-row-summary"><td class="bh-td-field"><strong>GHG Emissions (tCO₂e)</strong></td>';
   for (const yr of years) {
     const yd = yearData[String(yr)];
-    const v  = yd ? yd.emissions : null;
+    if (yd == null) {
+      html += `<td class="bh-td-val bh-td-missing"></td>`;
+      continue;
+    }
+    const v  = yd.emissions;
     let cell = v != null ? fmtNum(v, 1) : '—';
     if (yr === latestYr) {
       cell += trendArrow(v, ydPrev ? ydPrev.emissions : null, false);
@@ -274,13 +314,15 @@ function buildSummaryRows(years, yearData, latestYr, prevYr) {
   // LL97 Fine row
   html += '<tr class="bh-row-summary"><td class="bh-td-field"><strong>LL97 Fine</strong></td>';
   for (const yr of years) {
-    const yd      = yearData[String(yr)];
-    const fine    = yd ? yd.fine : null;
-    const src     = yd ? yd.source : null;
+    const yd   = yearData[String(yr)];
+    if (yd == null) {
+      html += `<td class="bh-td-val bh-td-missing"></td>`;
+      continue;
+    }
+    const fine = yd.fine;
+    const src  = yd.source;
     let fineCell;
-    if (!yd) {
-      fineCell = '—';
-    } else if (src === 'manual') {
+    if (src === 'manual') {
       fineCell = fine != null ? (fine > 0 ? `<span class="rp-fine-amount">${fmtDollars(fine)}</span>` : '<span class="rp-fine-zero">$0</span>') : '—';
     } else if (fine == null) {
       fineCell = '<span class="rp-fine-dash">—</span>';
@@ -301,7 +343,11 @@ function buildSummaryRows(years, yearData, latestYr, prevYr) {
   html += '<tr class="bh-row-source"><td class="bh-td-field">Data Source</td>';
   for (const yr of years) {
     const yd  = yearData[String(yr)];
-    const src = yd ? yd.source : null;
+    if (yd == null) {
+      html += `<td class="bh-td-val bh-td-missing"></td>`;
+      continue;
+    }
+    const src = yd.source;
     const badge = src === 'manual'
       ? '<span class="badge badge-manual">Manual</span>'
       : src === 'll84'
@@ -313,5 +359,149 @@ function buildSummaryRows(years, yearData, latestYr, prevYr) {
 
   return html;
 }
+
+// ── Search modal ─────────────────────────────────────────────────────────────
+let _searchTargetYear = null;
+let _searchTimeout    = null;
+
+function openSearchModal(year) {
+  _searchTargetYear = year;
+  document.getElementById('bh-search-modal-desc').textContent =
+    `Search LL84 database to find data for ${year} for this building.`;
+  document.getElementById('bh-search-input').value = '';
+  document.getElementById('bh-search-results').classList.add('hidden');
+  document.getElementById('bh-search-results').innerHTML = '';
+  document.getElementById('bh-search-modal').classList.remove('hidden');
+  document.getElementById('bh-search-input').focus();
+}
+
+function closeSearchModal() {
+  document.getElementById('bh-search-modal').classList.add('hidden');
+  _searchTargetYear = null;
+}
+
+async function performBhSearch(q) {
+  const resultsEl = document.getElementById('bh-search-results');
+  resultsEl.classList.remove('hidden');
+  resultsEl.innerHTML = '<div class="search-result-item" style="color:#868e96">Searching…</div>';
+  try {
+    const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}&ll84_only=true`);
+    const data = await resp.json();
+    if (!data.results || data.results.length === 0) {
+      resultsEl.innerHTML = '<div class="search-result-item" style="color:#868e96">No buildings found.</div>';
+      return;
+    }
+    resultsEl.innerHTML = '';
+    data.results.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      const floor = r.gross_floor_area ? `${fmtNum(r.gross_floor_area)} sf` : '';
+      const es    = r.energy_star_score ? `ES Score: ${r.energy_star_score}` : '';
+      item.innerHTML =
+        `<div class="sri-main">${esc(r.property_name || r.address || 'Unknown')}</div>` +
+        `<div class="sri-sub">${esc(r.address || '')} ${esc(r.borough || '')} ${esc(r.postcode || '')}` +
+        `${r.bbl ? ` &bull; BBL: ${esc(r.bbl)}` : ''}${r.bin ? ` &bull; BIN: ${esc(r.bin)}` : ''}</div>` +
+        `<div class="sri-meta">${floor}${floor && es ? ' &bull; ' : ''}${es}` +
+        `${r.year_ending ? ` &bull; Data year: ${r.year_ending.substring(0, 4)}` : ''}</div>`;
+      item.addEventListener('click', () => selectSearchResult(r));
+      resultsEl.appendChild(item);
+    });
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="search-result-item" style="color:#c0392b">Search failed. Please try again.</div>';
+  }
+}
+
+async function selectSearchResult(r) {
+  if (_searchTargetYear == null) return;
+  try {
+    const resp = await fetch(`/api/building-history/${encodeURIComponent(saveName)}/link-year`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        calendar_year:    _searchTargetYear,
+        ll84_bbl:         r.bbl         || '',
+        ll84_bin:         r.bin         || '',
+        ll84_year_ending: r.year_ending || '',
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert('Could not link data: ' + (err.error || resp.statusText));
+      return;
+    }
+    closeSearchModal();
+    // Reload the page data
+    const histResp = await fetch(`/api/building-history/${encodeURIComponent(saveName)}`);
+    if (!histResp.ok) throw new Error('Reload failed');
+    _pageData = await histResp.json();
+    renderPage(_pageData);
+  } catch (e) {
+    alert('An error occurred. Please try again.');
+  }
+}
+
+// Wire up search modal events
+document.getElementById('bh-search-modal-close').addEventListener('click', closeSearchModal);
+document.getElementById('bh-search-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('bh-search-modal')) closeSearchModal();
+});
+document.getElementById('bh-search-input').addEventListener('input', function () {
+  clearTimeout(_searchTimeout);
+  const q = this.value.trim();
+  if (q.length < 3) {
+    document.getElementById('bh-search-results').classList.add('hidden');
+    return;
+  }
+  _searchTimeout = setTimeout(() => performBhSearch(q), 350);
+});
+document.getElementById('bh-search-btn').addEventListener('click', () => {
+  const q = document.getElementById('bh-search-input').value.trim();
+  if (q.length >= 3) performBhSearch(q);
+});
+
+// ── Remove year modal ────────────────────────────────────────────────────────
+let _removeTargetYear = null;
+
+function openRemoveModal(year) {
+  _removeTargetYear = year;
+  document.getElementById('bh-remove-modal-desc').textContent =
+    `Are you sure you want to remove the ${year} data from this building?`;
+  document.getElementById('bh-remove-modal').classList.remove('hidden');
+}
+
+function closeRemoveModal() {
+  document.getElementById('bh-remove-modal').classList.add('hidden');
+  _removeTargetYear = null;
+}
+
+async function confirmRemove() {
+  if (_removeTargetYear == null) return;
+  const year = _removeTargetYear;
+  closeRemoveModal();
+  try {
+    const resp = await fetch(
+      `/api/building-history/${encodeURIComponent(saveName)}/year/${year}`,
+      { method: 'DELETE' }
+    );
+    if (!resp.ok) {
+      alert('Could not remove year data. Please try again.');
+      return;
+    }
+    // Reload
+    const histResp = await fetch(`/api/building-history/${encodeURIComponent(saveName)}`);
+    if (!histResp.ok) throw new Error('Reload failed');
+    _pageData = await histResp.json();
+    renderPage(_pageData);
+  } catch (e) {
+    alert('An error occurred. Please try again.');
+  }
+}
+
+document.getElementById('bh-remove-modal-close').addEventListener('click', closeRemoveModal);
+document.getElementById('bh-remove-cancel-btn').addEventListener('click', closeRemoveModal);
+document.getElementById('bh-remove-confirm-btn').addEventListener('click', confirmRemove);
+document.getElementById('bh-remove-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('bh-remove-modal')) closeRemoveModal();
+});
 
 loadHistory();

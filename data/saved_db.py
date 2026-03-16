@@ -106,6 +106,7 @@ def create_saved_tables(conn):
             calendar_year       INTEGER  NOT NULL,
             source_type         TEXT     NOT NULL DEFAULT 'manual',
             ll84_bbl            TEXT,
+            ll84_bin            TEXT,
             ll84_year_ending    TEXT,
             override_emissions  REAL,
             override_fine       REAL,
@@ -117,5 +118,9 @@ def create_saved_tables(conn):
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_ph_building ON performance_history(building_save_name)'
     )
+    # Migrate: add ll84_bin if the table already exists without it
+    ph_cols = {row[1] for row in conn.execute("PRAGMA table_info(performance_history)").fetchall()}
+    if 'll84_bin' not in ph_cols:
+        conn.execute('ALTER TABLE performance_history ADD COLUMN ll84_bin TEXT')
 
     conn.commit()

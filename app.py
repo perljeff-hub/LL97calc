@@ -6,6 +6,7 @@ Flask web application
 import os
 import json
 import sqlite3
+from datetime import datetime as _dt
 from flask import Flask, render_template, request, jsonify, session, redirect
 from flask_cors import CORS
 
@@ -711,11 +712,13 @@ def search_buildings():
     if len(q) < 3:
         return jsonify({'results': []})
 
+    ll84_only = request.args.get('ll84_only', '').lower() in ('1', 'true', 'yes')
+
     q_like = f'%{q}%'
     results = []
 
     # ── 1. Query savedbuildings.db first so saved buildings appear at the top ──
-    if os.path.exists(SAVED_DB_PATH):
+    if not ll84_only and os.path.exists(SAVED_DB_PATH):
         try:
             sconn = get_saved_db_connection()
             srows = sconn.execute('''
@@ -1781,6 +1784,17 @@ def _parse_bins(bin_str):
     return [b.strip() for b in bin_str.replace(';', ',').split(',') if b.strip()]
 
 
+def _has_multiple_identifiers(source_bbl, source_bin):
+    """Return True if source_bbl or source_bin contains multiple values (complex with many BBL/BIN)."""
+    bins = [b.strip() for b in (source_bin or '').replace(';', ',').replace('/', ',').split(',') if b.strip()]
+    if len(bins) > 1:
+        return True
+    bbls = [b.strip() for b in (source_bbl or '').replace(';', ',').replace('/', ',').split(',') if b.strip()]
+    if len(bbls) > 1:
+        return True
+    return False
+
+
 def _find_ll84_rows_for_building(ll84_conn, source_bbl, source_bin):
     """
     Find all LL84 rows matching a saved building.
@@ -1845,6 +1859,10 @@ def _run_ll84_autolink(sconn):
         if not bbl and not bin_str:
             continue
 
+        # Skip buildings with multiple BBL/BIN — they must be linked manually
+        if _has_multiple_identifiers(bbl, bin_str):
+            continue
+
         try:
             occ_groups = json.loads(bldg['occupancy_groups'] or '[]')
         except Exception:
@@ -1861,8 +1879,9 @@ def _run_ll84_autolink(sconn):
             except (ValueError, TypeError):
                 continue
 
-            # Use the LL84 row's own BBL so the later lookup finds the right record
+            # Use the LL84 row's own BBL and BIN so the later lookup finds the right record
             ll84_own_bbl = row['bbl'] or ''
+            ll84_own_bin = row['bin'] or ''
 
             existing = sconn.execute(
                 'SELECT id, source_type FROM performance_history '
@@ -1876,15 +1895,15 @@ def _run_ll84_autolink(sconn):
             if existing:
                 sconn.execute('''
                     UPDATE performance_history
-                    SET ll84_bbl = ?, ll84_year_ending = ?, updated_at = datetime('now')
+                    SET ll84_bbl = ?, ll84_bin = ?, ll84_year_ending = ?, updated_at = datetime('now')
                     WHERE building_save_name = ? AND calendar_year = ?
-                ''', (ll84_own_bbl, year_ending, save_name, cal_year))
+                ''', (ll84_own_bbl, ll84_own_bin, year_ending, save_name, cal_year))
             else:
                 sconn.execute('''
                     INSERT INTO performance_history
-                        (building_save_name, calendar_year, source_type, ll84_bbl, ll84_year_ending)
-                    VALUES (?, ?, 'll84', ?, ?)
-                ''', (save_name, cal_year, ll84_own_bbl, year_ending))
+                        (building_save_name, calendar_year, source_type, ll84_bbl, ll84_bin, ll84_year_ending)
+                    VALUES (?, ?, 'll84', ?, ?, ?)
+                ''', (save_name, cal_year, ll84_own_bbl, ll84_own_bin, year_ending))
                 new_count += 1
 
     ll84_conn.close()
@@ -2113,11 +2132,13 @@ def get_building_history(save_name):
     ).fetchall()
     sconn.close()
 
-    # Fetch LL84 full rows using BIN-first matching
-    ll84_by_year = {}
     bbl     = bldg.get('source_bbl') or ''
     bin_str = bldg.get('source_bin') or ''
-    if (bbl or bin_str) and os.path.exists(DB_PATH):
+    is_multi = _has_multiple_identifiers(bbl, bin_str)
+
+    # For single-identifier buildings: fetch all LL84 years via BIN/BBL scan
+    ll84_by_year = {}
+    if not is_multi and (bbl or bin_str) and os.path.exists(DB_PATH):
         ll84_conn = get_db_connection()
         ll84_all  = _find_ll84_rows_for_building(ll84_conn, bbl, bin_str)
         ll84_conn.close()
@@ -2130,14 +2151,40 @@ def get_building_history(save_name):
                 except (ValueError, TypeError):
                     pass
 
+    # For performance_history ll84 records: look up the specific LL84 row by
+    # ll84_bin + year_ending (preferred) or ll84_bbl + year_ending (fallback).
+    # This ensures multi-identifier buildings show the correct LL84 row.
+    if os.path.exists(DB_PATH):
+        ll84_conn = get_db_connection()
+        for ph in ph_rows:
+            if ph['source_type'] == 'll84':
+                yr       = ph['calendar_year']
+                ph_bin   = (ph['ll84_bin']        or '') if 'll84_bin' in ph.keys() else ''
+                ph_bbl   = ph['ll84_bbl']          or ''
+                ph_ye    = ph['ll84_year_ending']  or ''
+                if not ph_ye:
+                    continue
+                row = None
+                if ph_bin:
+                    row = ll84_conn.execute(
+                        'SELECT * FROM buildings WHERE bin = ? AND year_ending = ?',
+                        (ph_bin, ph_ye)
+                    ).fetchone()
+                if not row and ph_bbl:
+                    row = ll84_conn.execute(
+                        'SELECT * FROM buildings WHERE bbl = ? AND year_ending = ?',
+                        (ph_bbl, ph_ye)
+                    ).fetchone()
+                if row:
+                    ll84_by_year[yr] = dict(row)
+        ll84_conn.close()
+
     occ = bldg['occupancy_groups']
 
     def _ll84_to_display(row):
-        """Convert an LL84 row to display-unit fields including identifiers and occupancy."""
+        """Convert an LL84 row to display-unit fields."""
         def kbtu_to(val, d):
             return round(val / d, 1) if val else None
-
-        # Build occupancy string from up to 3 property types
         occ_parts = []
         for type_col, area_col in [
             ('primary_property_type', 'primary_floor_area'),
@@ -2149,7 +2196,6 @@ def get_building_history(save_name):
             if t:
                 occ_parts.append(f"{t}: {int(a):,} sf" if a else t)
         occ_str = ' / '.join(occ_parts) if occ_parts else None
-
         return {
             'bbl':                row.get('bbl'),
             'bin':                row.get('bin'),
@@ -2168,44 +2214,55 @@ def get_building_history(save_name):
             'reported_ghg':       row.get('reported_ghg_emissions'),
         }
 
+    # Build year_data from performance_history records (authoritative source)
     year_data = {}
-    all_years = set(ll84_by_year.keys())
-
+    ph_years  = set()
     for ph in ph_rows:
         yr = ph['calendar_year']
-        all_years.add(yr)
+        ph_years.add(yr)
         if ph['source_type'] == 'manual':
             year_data[yr] = {
-                'source':    'manual',
-                'emissions': ph['override_emissions'],
-                'fine':      ph['override_fine'],
-                'fields':    None,
+                'source':         'manual',
+                'emissions':      ph['override_emissions'],
+                'fine':           ph['override_fine'],
+                'fields':         None,
+                'has_ph_record':  True,
             }
         else:
-            ll84_row = ll84_by_year.get(yr)
-            fields   = _ll84_to_display(ll84_row) if ll84_row else None
+            ll84_row  = ll84_by_year.get(yr)
+            fields    = _ll84_to_display(ll84_row) if ll84_row else None
             emissions = _compute_ll97_emissions_from_ll84(ll84_row) if ll84_row else None
             fine      = _compute_fine_from_ll84(ll84_row, occ, yr) if ll84_row else None
             year_data[yr] = {
-                'source':    'll84',
-                'emissions': emissions,
-                'fine':      fine,
-                'fields':    fields,
+                'source':         'll84',
+                'emissions':      emissions,
+                'fine':           fine,
+                'fields':         fields,
+                'has_ph_record':  True,
             }
 
-    # Add LL84 years not yet in performance_history
-    for yr, ll84_row in ll84_by_year.items():
+    # For single-identifier buildings: also include LL84 years not yet in performance_history
+    if not is_multi:
+        for yr, ll84_row in ll84_by_year.items():
+            if yr not in year_data:
+                fields = _ll84_to_display(ll84_row)
+                fine   = _compute_fine_from_ll84(ll84_row, occ, yr)
+                year_data[yr] = {
+                    'source':         'll84',
+                    'emissions':      _compute_ll97_emissions_from_ll84(ll84_row),
+                    'fine':           fine,
+                    'fields':         fields,
+                    'has_ph_record':  False,
+                }
+
+    # Always pad to at least 2022 through the max known year (null = missing data)
+    MIN_YEAR = 2022
+    max_year = max(year_data.keys()) if year_data else _dt.now().year
+    for yr in range(MIN_YEAR, max_year + 1):
         if yr not in year_data:
-            fields = _ll84_to_display(ll84_row)
-            fine   = _compute_fine_from_ll84(ll84_row, occ, yr)
-            year_data[yr] = {
-                'source':    'll84',
-                'emissions': _compute_ll97_emissions_from_ll84(ll84_row),
-                'fine':      fine,
-                'fields':    fields,
-            }
+            year_data[yr] = None
 
-    # Determine which field-rows changed between consecutive years
+    # Determine which field-rows changed between consecutive years (skip null years)
     sorted_yrs = sorted(year_data.keys())
     field_keys = [
         'energy_star_score', 'electricity_kwh', 'natural_gas_therms', 'district_steam_mlb',
@@ -2214,9 +2271,10 @@ def get_building_history(save_name):
         'gross_floor_area', 'occupancy_types', 'reported_ghg',
     ]
     changed_rows = set()
-    for i in range(1, len(sorted_yrs)):
-        yr_prev = sorted_yrs[i - 1]
-        yr_curr = sorted_yrs[i]
+    data_yrs = [y for y in sorted_yrs if year_data[y] is not None]
+    for i in range(1, len(data_yrs)):
+        yr_prev = data_yrs[i - 1]
+        yr_curr = data_yrs[i]
         fd_prev = (year_data[yr_prev].get('fields') or {})
         fd_curr = (year_data[yr_curr].get('fields') or {})
         for fk in field_keys:
@@ -2224,12 +2282,93 @@ def get_building_history(save_name):
                 changed_rows.add(fk)
 
     return jsonify({
-        'building':      bldg,
-        'years':         sorted_yrs,
-        'year_data':     {str(k): v for k, v in year_data.items()},
-        'field_keys':    field_keys,
-        'changed_rows':  list(changed_rows),
+        'building':              bldg,
+        'years':                 sorted_yrs,
+        'year_data':             {str(k): v for k, v in year_data.items()},
+        'field_keys':            field_keys,
+        'changed_rows':          list(changed_rows),
+        'is_multi_identifier':   is_multi,
     })
+
+
+@app.route('/api/building-history/<path:save_name>/link-year', methods=['POST'])
+def link_year_to_building(save_name):
+    """Link a specific LL84 row to a building-year in performance_history."""
+    data = request.get_json() or {}
+    calendar_year    = data.get('calendar_year')
+    ll84_bbl         = (data.get('ll84_bbl')          or '').strip()
+    ll84_bin         = (data.get('ll84_bin')           or '').strip()
+    ll84_year_ending = (data.get('ll84_year_ending')   or '').strip()
+
+    if not calendar_year or not ll84_year_ending:
+        return jsonify({'error': 'calendar_year and ll84_year_ending are required'}), 400
+    if not ll84_bbl and not ll84_bin:
+        return jsonify({'error': 'll84_bbl or ll84_bin required'}), 400
+    if not os.path.exists(DB_PATH):
+        return jsonify({'error': 'LL84 database not found'}), 404
+
+    ll84_conn = get_db_connection()
+    ll84_row = None
+    if ll84_bin:
+        ll84_row = ll84_conn.execute(
+            'SELECT * FROM buildings WHERE bin = ? AND year_ending = ?',
+            (ll84_bin, ll84_year_ending)
+        ).fetchone()
+    if not ll84_row and ll84_bbl:
+        ll84_row = ll84_conn.execute(
+            'SELECT * FROM buildings WHERE bbl = ? AND year_ending = ?',
+            (ll84_bbl, ll84_year_ending)
+        ).fetchone()
+    ll84_conn.close()
+    if not ll84_row:
+        return jsonify({'error': 'LL84 row not found'}), 404
+
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Building not found'}), 404
+    sconn = get_saved_db_connection()
+    create_saved_tables(sconn)
+    if not sconn.execute('SELECT save_name FROM saved_buildings WHERE save_name = ?', (save_name,)).fetchone():
+        sconn.close()
+        return jsonify({'error': 'Building not found'}), 404
+
+    own_bbl = ll84_row['bbl'] or ll84_bbl
+    own_bin = ll84_row['bin'] or ll84_bin
+    existing = sconn.execute(
+        'SELECT id FROM performance_history WHERE building_save_name = ? AND calendar_year = ?',
+        (save_name, int(calendar_year))
+    ).fetchone()
+    if existing:
+        sconn.execute('''
+            UPDATE performance_history
+            SET source_type = 'll84', ll84_bbl = ?, ll84_bin = ?, ll84_year_ending = ?,
+                override_emissions = NULL, override_fine = NULL, updated_at = datetime('now')
+            WHERE building_save_name = ? AND calendar_year = ?
+        ''', (own_bbl, own_bin, ll84_year_ending, save_name, int(calendar_year)))
+    else:
+        sconn.execute('''
+            INSERT INTO performance_history
+                (building_save_name, calendar_year, source_type, ll84_bbl, ll84_bin, ll84_year_ending)
+            VALUES (?, ?, 'll84', ?, ?, ?)
+        ''', (save_name, int(calendar_year), own_bbl, own_bin, ll84_year_ending))
+    sconn.commit()
+    sconn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/building-history/<path:save_name>/year/<int:year>', methods=['DELETE'])
+def delete_building_year(save_name, year):
+    """Remove a performance_history record for a specific building-year."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    sconn = get_saved_db_connection()
+    create_saved_tables(sconn)
+    sconn.execute(
+        'DELETE FROM performance_history WHERE building_save_name = ? AND calendar_year = ?',
+        (save_name, year)
+    )
+    sconn.commit()
+    sconn.close()
+    return jsonify({'success': True})
 
 
 @app.route('/api/building-years')

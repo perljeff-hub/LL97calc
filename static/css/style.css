@@ -2245,6 +2245,36 @@ body {
 .badge-ll84   { background: #e8f4fd; color: #1a5276; }
 .badge-manual { background: #fef9c3; color: #713f12; }
 
+/* Missing-year cells */
+.bh-td-missing {
+  background: var(--gray-50);
+  color: var(--gray-400);
+}
+
+/* Action row (search / remove links) */
+.bh-action-row .bh-td-val {
+  padding-top: .45rem;
+  padding-bottom: .45rem;
+}
+.bh-action-label { background: var(--gray-50); }
+.bh-search-link  { font-size: .75rem; color: var(--blue); white-space: nowrap; }
+.bh-remove-link  { font-size: .75rem; color: var(--red);  white-space: nowrap; }
+
+/* Search modal (wider than default) */
+.bh-search-modal-box { max-width: 560px; }
+.bh-modal-desc { font-size: .88rem; color: var(--gray-600); margin: 0; }
+
+/* Sri-meta row in search results */
+.sri-meta { font-size: .75rem; color: var(--gray-400); margin-top: .1rem; }
+
+/* Danger button */
+.btn-danger {
+  background: #c0392b;
+  color: #fff;
+  border: none;
+}
+.btn-danger:hover { background: #a93226; }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SELECT BUILDING — YEAR SELECTOR & WARNINGS
    ═══════════════════════════════════════════════════════════════════════════ */
