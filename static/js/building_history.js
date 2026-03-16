@@ -17,11 +17,14 @@ function fmtDollars(n) {
 }
 
 const FIELD_LABELS = {
+  bbl:                'BBL',
+  bin:                'BIN',
   property_name:      'Property Name',
   address:            'Address',
   borough:            'Borough',
   postcode:           'Zip Code',
   gross_floor_area:   'Gross Floor Area (sq ft)',
+  occupancy_types:    'Occupancy Type(s)',
   energy_star_score:  'Energy Star Score',
   electricity_kwh:    'Electricity (kWh)',
   natural_gas_therms: 'Natural Gas (therms)',

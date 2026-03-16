@@ -1,4 +1,4 @@
-/* Real Performance Over Time — Frontend Logic */
+/* Historical Performance Over Time — Frontend Logic */
 'use strict';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
@@ -31,9 +31,9 @@ async function loadData(forceRefresh) {
 
   try {
     if (forceRefresh) {
-      await fetch('/api/real-performance/refresh-links', { method: 'POST' });
+      await fetch('/api/historical-performance/refresh-links', { method: 'POST' });
     }
-    const resp = await fetch('/api/real-performance');
+    const resp = await fetch('/api/historical-performance');
     if (!resp.ok) throw new Error('Failed to load');
     const data = await resp.json();
 
@@ -171,7 +171,7 @@ async function saveManualEntry() {
   }
 
   try {
-    const resp = await fetch('/api/real-performance/manual-entry', {
+    const resp = await fetch('/api/historical-performance/manual-entry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
