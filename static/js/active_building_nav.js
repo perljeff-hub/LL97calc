@@ -158,7 +158,7 @@
       if (buildingPages.includes(path)) {
         dest = path;
       } else if (path.startsWith('/building-history/')) {
-        dest = '/historical-performance';
+        dest = '/building-history/' + encodeURIComponent(b.save_name);
       } else {
         dest = '/calculate';
       }

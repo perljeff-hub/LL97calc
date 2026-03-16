@@ -2170,6 +2170,10 @@ body {
    ═══════════════════════════════════════════════════════════════════════════ */
 .bh-back-row   { margin-bottom: 1rem; }
 .bh-back-btn   { display: inline-flex; align-items: center; gap: .3rem; }
+.bh-header .rp-subtitle {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
 .bh-header     { margin-bottom: 1.25rem; }
 
 .bh-table-wrap {
