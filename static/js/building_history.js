@@ -262,8 +262,15 @@ function renderPage(data) {
       html += `<td class="bh-td-val bh-td-missing">` +
         `<button class="btn-link bh-search-link" data-year="${yr}">Search for missing data</button>` +
         `</td>`;
+    } else if (yd.source === 'manual') {
+      // Manually entered — allow searching (will prompt to overwrite) and removing
+      let inner = `<button class="btn-link bh-search-link" data-year="${yr}">Search for missing data</button>`;
+      if (yr !== latestYr) {
+        inner += `<br><button class="btn-link bh-remove-link" data-year="${yr}" style="margin-top:.2rem">Remove from this building</button>`;
+      }
+      html += `<td class="bh-td-val">${inner}</td>`;
     } else if (yd.has_ph_record && yr !== latestYr) {
-      // Has a performance_history record and is not the most-recent year — allow removal
+      // LL84-linked record, not the most-recent year — allow removal
       html += `<td class="bh-td-val">` +
         `<button class="btn-link bh-remove-link" data-year="${yr}">Remove from this building</button>` +
         `</td>`;
@@ -413,6 +420,33 @@ async function performBhSearch(q) {
 
 async function selectSearchResult(r) {
   if (_searchTargetYear == null) return;
+
+  // Warn before overwriting manually entered data
+  const existingYd = (_pageData && _pageData.year_data) ? _pageData.year_data[String(_searchTargetYear)] : null;
+  if (existingYd && existingYd.source === 'manual') {
+    openOverwriteConfirm(r);
+    return;
+  }
+  await _doLinkYear(r);
+}
+
+function openOverwriteConfirm(r) {
+  document.getElementById('bh-remove-modal-title').textContent = 'Overwrite manually entered data?';
+  document.getElementById('bh-remove-modal-desc').textContent =
+    `Are you sure you want to overwrite manually entered data for ${_searchTargetYear} with LL84 data?`;
+  const confirmBtn = document.getElementById('bh-remove-confirm-btn');
+  confirmBtn.textContent = 'Yes, overwrite';
+  // Temporarily override the confirm handler for this one-time use
+  confirmBtn.onclick = async () => {
+    closeRemoveModal();
+    confirmBtn.textContent = 'Remove';  // restore default label
+    confirmBtn.onclick = confirmRemove; // restore default handler
+    await _doLinkYear(r);
+  };
+  document.getElementById('bh-remove-modal').classList.remove('hidden');
+}
+
+async function _doLinkYear(r) {
   try {
     const resp = await fetch(`/api/building-history/${encodeURIComponent(saveName)}/link-year`, {
       method: 'POST',

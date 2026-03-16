@@ -943,6 +943,53 @@ def save_building():
             )
         ''', row)
 
+    # Seed performance_history for the saved year using the exact LL84 row.
+    # This is the only reliable way to populate multi-BBL/BIN buildings because
+    # the auto-link skips them; we use exact bbl/bin+year_ending from this save.
+    year_ending_val = row['year_ending'] or ''
+    source_bbl_val  = row['source_bbl']  or ''
+    source_bin_val  = row['source_bin']  or ''
+    if year_ending_val and os.path.exists(DB_PATH):
+        try:
+            cal_year  = int(year_ending_val[:4])
+            ll84_conn = get_db_connection()
+            ll84_row  = None
+            if source_bin_val:
+                ll84_row = ll84_conn.execute(
+                    'SELECT * FROM buildings WHERE bin = ? AND year_ending = ?',
+                    (source_bin_val, year_ending_val)
+                ).fetchone()
+            if not ll84_row and source_bbl_val:
+                ll84_row = ll84_conn.execute(
+                    'SELECT * FROM buildings WHERE bbl = ? AND year_ending = ?',
+                    (source_bbl_val, year_ending_val)
+                ).fetchone()
+            ll84_conn.close()
+            if ll84_row:
+                existing_ph = conn.execute(
+                    'SELECT id, source_type FROM performance_history '
+                    'WHERE building_save_name = ? AND calendar_year = ?',
+                    (save_name, cal_year)
+                ).fetchone()
+                own_bbl = ll84_row['bbl'] or ''
+                own_bin = ll84_row['bin'] or ''
+                if not existing_ph:
+                    conn.execute('''
+                        INSERT INTO performance_history
+                            (building_save_name, calendar_year, source_type,
+                             ll84_bbl, ll84_bin, ll84_year_ending)
+                        VALUES (?, ?, 'll84', ?, ?, ?)
+                    ''', (save_name, cal_year, own_bbl, own_bin, year_ending_val))
+                elif existing_ph['source_type'] != 'manual':
+                    conn.execute('''
+                        UPDATE performance_history
+                        SET ll84_bbl = ?, ll84_bin = ?, ll84_year_ending = ?,
+                            updated_at = datetime('now')
+                        WHERE building_save_name = ? AND calendar_year = ?
+                    ''', (own_bbl, own_bin, year_ending_val, save_name, cal_year))
+        except Exception:
+            pass  # Non-fatal; history can be linked manually from building-history page
+
     conn.commit()
     conn.close()
     return jsonify({'success': True, 'save_name': save_name})
@@ -2019,7 +2066,7 @@ def get_real_performance():
                 }
         buildings_out.append({
             'save_name':        sn,
-            'display_name':     b['property_name'] or sn,
+            'display_name':     sn,
             'address':          b['address'] or '',
             'borough':          b['borough'] or '',
             'gross_floor_area': b['gross_floor_area'],
