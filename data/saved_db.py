@@ -49,6 +49,8 @@ def create_saved_tables(conn):
         conn.execute('ALTER TABLE saved_buildings ADD COLUMN selected_scenario_id INTEGER DEFAULT NULL')
     if 'compliance_cache' not in existing_cols:
         conn.execute('ALTER TABLE saved_buildings ADD COLUMN compliance_cache TEXT DEFAULT NULL')
+    if 'deleted' not in existing_cols:
+        conn.execute('ALTER TABLE saved_buildings ADD COLUMN deleted INTEGER DEFAULT 0')
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_save_name ON saved_buildings(save_name)'
     )
