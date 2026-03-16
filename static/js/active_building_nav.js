@@ -1,51 +1,48 @@
 /* active_building_nav.js
- * Enhances the active-building chip in the header with a click-to-open
- * dropdown showing the 5 most recent buildings and a Portfolio link.
+ * Handles the active-building chip dropdown.
+ * Uses event delegation so it works with chips rendered dynamically after DOMContentLoaded.
  */
 'use strict';
 
 (function () {
   document.addEventListener('DOMContentLoaded', function () {
-    const wrap = document.querySelector('.active-building-chip-wrap');
-    if (!wrap) return;
 
-    const chip = wrap.querySelector('.active-building-chip');
-    if (!chip) return;
-
-    let loaded = false;
-
-    chip.addEventListener('click', function (e) {
-      e.stopPropagation();
-      const opening = !wrap.classList.contains('abt-open');
-      wrap.classList.toggle('abt-open');
-      if (opening && !loaded) {
-        loaded = true;
-        loadRecentBuildings(wrap);
-      }
-    });
-
-    // Close on outside click
-    document.addEventListener('click', function () {
-      wrap.classList.remove('abt-open');
-    });
-
-    // Prevent clicks inside the tooltip/dropdown from closing it
-    const tooltip = wrap.querySelector('.active-building-tooltip');
-    if (tooltip) {
-      tooltip.addEventListener('click', function (e) {
+    // Event delegation on document — chip may be injected into the DOM after load
+    document.addEventListener('click', function (e) {
+      const chip = e.target.closest('.active-building-chip');
+      if (chip) {
         e.stopPropagation();
+        const wrap = chip.closest('.active-building-chip-wrap');
+        if (!wrap) return;
+        const opening = !wrap.classList.contains('abt-open');
+        // Close any other open wraps
+        document.querySelectorAll('.active-building-chip-wrap.abt-open').forEach(function (w) {
+          if (w !== wrap) w.classList.remove('abt-open');
+        });
+        wrap.classList.toggle('abt-open');
+        if (opening && !wrap.dataset.loaded) {
+          wrap.dataset.loaded = 'true';
+          loadRecentBuildings(wrap);
+        }
+        return;
+      }
+      // Clicks inside the tooltip/dropdown should not close it
+      if (e.target.closest('.active-building-tooltip')) return;
+      // Click outside — close all
+      document.querySelectorAll('.active-building-chip-wrap.abt-open').forEach(function (w) {
+        w.classList.remove('abt-open');
       });
-    }
+    });
+
   });
 
   async function loadRecentBuildings(wrap) {
     const tooltip = wrap.querySelector('.active-building-tooltip');
     if (!tooltip) return;
 
-    // Append a section for the recent-buildings dropdown
     const section = document.createElement('div');
     section.className = 'abt-dropdown-section';
-    section.innerHTML = '<div class="abt-dropdown-loading">Loading recent buildings…</div>';
+    section.innerHTML = '<div class="abt-dropdown-loading">Loading recent buildings\u2026</div>';
     tooltip.appendChild(section);
 
     try {
@@ -96,7 +93,7 @@
       footer.className = 'abt-dropdown-footer';
       const link = document.createElement('a');
       link.href = '/portfolio';
-      link.textContent = 'Select from Portfolio →';
+      link.textContent = 'Select from Portfolio \u2192';
       footer.appendChild(link);
       section.appendChild(footer);
 
@@ -153,10 +150,19 @@
       } else {
         localStorage.removeItem('ll97_timeline_scenario_id');
       }
-      // Stay on the current page if it's a building-specific view, otherwise go to Calculate
+      // Determine destination: stay on building-specific pages; from building-history
+      // go to Historical Performance; otherwise go to Calculate.
       const path = window.location.pathname;
       const buildingPages = ['/calculate', '/manage', '/reduction-plan'];
-      window.location.href = buildingPages.includes(path) ? path : '/calculate';
+      let dest;
+      if (buildingPages.includes(path)) {
+        dest = path;
+      } else if (path.startsWith('/building-history/')) {
+        dest = '/building-history/' + encodeURIComponent(b.save_name);
+      } else {
+        dest = '/calculate';
+      }
+      window.location.href = dest;
     } catch (e) {
       alert('Could not load building: ' + e.message);
     }

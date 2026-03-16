@@ -47,9 +47,12 @@
 
 <main class="main-container">
 
-  <div class="portfolio-header-row">
+  <div class="portfolio-header-row hidden" id="pf-header-row">
     <h1 class="portfolio-page-title">Portfolio</h1>
-    <button class="btn btn-primary" id="pf-add-btn">+ Add a Building</button>
+    <div class="portfolio-header-actions">
+      <a href="/historical-performance" class="btn btn-ghost">&#128200; Historical Performance</a>
+      <button class="btn btn-primary" id="pf-add-btn">+ Add a Building</button>
+    </div>
   </div>
 
   <div id="pf-loading" class="card manage-status-card">

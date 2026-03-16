@@ -9,6 +9,11 @@ let isDirty = false;
 let _loading = false;
 let _energyPrices = {};
 
+// Year-recency tracking: BBL → most-recent year_ending (from LL84 search results)
+let _ll84YearMap = {};
+// Whether the currently displayed LL84 data is from a non-recent year
+let _viewingOlderYear = false;
+
 const EU_FUELS = [
   { inputId: 'elec',  priceKey: 'electricity_kwh',    unit: '/kWh',   priceElId: 'eu-price-elec',  costElId: 'eu-cost-elec'  },
   { inputId: 'gas',   priceKey: 'natural_gas_therm',  unit: '/therm', priceElId: 'eu-price-gas',   costElId: 'eu-cost-gas'   },
@@ -320,6 +325,15 @@ async function performSearch(q) {
       resultsEl.innerHTML = '<div class="search-result-item" style="color:#868e96">No buildings found.</div>';
       return;
     }
+    // Track the most recent year for each BBL so we can warn on older-year selection
+    _ll84YearMap = {};
+    data.results.forEach(r => {
+      if (r.source === 'll84' && r.bbl && r.year_ending) {
+        if (!_ll84YearMap[r.bbl] || r.year_ending > _ll84YearMap[r.bbl]) {
+          _ll84YearMap[r.bbl] = r.year_ending;
+        }
+      }
+    });
     resultsEl.innerHTML = '';
     data.results.forEach(r => {
       const item = document.createElement('div');
@@ -371,16 +385,60 @@ function renderBuildingPanel(r) {
     { label: 'Gross Floor Area', value: r.gross_floor_area ? fmtNum(r.gross_floor_area) + ' sf' : '—' },
     { label: 'Energy Star Score',value: r.energy_star_score || '—' },
   ];
+
+  // Older-year warning banner (shown when not displaying most recent year for an LL84 building)
+  const olderYearBanner = _viewingOlderYear
+    ? `<div class="older-year-banner">
+         &#9888; This is not the most recent year of LL84 data available for this building.
+         <button class="btn-link" id="switch-to-latest-btn">Switch to latest year</button>
+       </div>`
+    : '';
+
+  // "See data from other years" control (shown for LL84 buildings with a BBL)
+  const otherYearsControl = (r.source === 'll84' && r.bbl)
+    ? `<div class="other-years-row">
+         <span class="other-years-label">Other years:</span>
+         <select id="other-years-select" class="form-input other-years-select">
+           <option value="">Loading…</option>
+         </select>
+       </div>`
+    : '';
+
   bldgGrid.innerHTML =
+    (olderYearBanner ? olderYearBanner : '') +
     `<div class="bldg-info-row bldg-info-row-4">${row1.map(makeItem).join('')}</div>` +
-    `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>`;
+    `<div class="bldg-info-row bldg-info-row-5">${row2.map(makeItem).join('')}</div>` +
+    (otherYearsControl ? otherYearsControl : '');
+
   bldgSection.classList.remove('hidden');
+
+  // Wire up "switch to latest" button
+  const switchBtn = document.getElementById('switch-to-latest-btn');
+  if (switchBtn) {
+    switchBtn.addEventListener('click', () => {
+      if (r.bbl) switchToYear(r.bbl, null);  // null = most recent
+    });
+  }
+
+  // Load other years for LL84 buildings
+  if (r.source === 'll84' && r.bbl) {
+    loadOtherYears(r.bbl, r.year_ending);
+  }
 }
 
-function populateFromBuilding(r) {
+function populateFromBuilding(r, skipYearCheck) {
   _loading = true;
   currentBuildingData = r;
   currentSaveName = (r.source === 'saved') ? r.save_name : null;
+
+  // Determine if we're viewing an older-than-latest LL84 year
+  _viewingOlderYear = false;
+  if (r.source === 'll84' && r.bbl && r.year_ending) {
+    const latestYE = _ll84YearMap[r.bbl];
+    if (latestYE && r.year_ending < latestYE) {
+      _viewingOlderYear = true;
+    }
+  }
 
   document.getElementById('error-msg').classList.add('hidden');
 
@@ -413,6 +471,118 @@ function populateFromBuilding(r) {
   saveFormState();
 
   document.getElementById('selected-building-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // Show older-year popup after loading (non-blocking warning)
+  if (_viewingOlderYear && !skipYearCheck && currentBuildingData && currentBuildingData.bbl) {
+    const dataYear   = currentBuildingData.year_ending ? currentBuildingData.year_ending.substring(0, 4) : 'this year';
+    const latestYE   = _ll84YearMap[currentBuildingData.bbl];
+    const latestYear = latestYE ? latestYE.substring(0, 4) : null;
+    showOlderYearDialog(currentBuildingData, dataYear, latestYear);
+  }
+}
+
+// ── OLDER YEAR DIALOG ────────────────────────────────────────────────────────
+function showOlderYearDialog(r, dataYear, latestYear) {
+  // Create or reuse modal element
+  let modal = document.getElementById('older-year-modal-backdrop');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'older-year-modal-backdrop';
+    modal.className = 'modal-backdrop';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">More Recent Data Available</h3>
+          <button class="modal-close" id="older-year-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body" id="older-year-body"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeOlderYearDialog(); });
+  }
+  const latestMsg = latestYear ? ` (${latestYear})` : '';
+  document.getElementById('older-year-body').innerHTML = `
+    <p>Data from a more recent year${latestMsg} is available for this building.
+       Are you sure you want to use data from <strong>${esc(dataYear)}</strong>?</p>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-primary" id="older-year-keep-btn">Keep ${esc(dataYear)} Data</button>
+      ${latestYear ? `<button class="btn btn-ghost" id="older-year-switch-btn">Load ${esc(latestYear)} Data Instead</button>` : ''}
+      <button class="btn btn-ghost" id="older-year-cancel-btn">Cancel</button>
+    </div>`;
+  modal.classList.remove('hidden');
+
+  document.getElementById('older-year-close').onclick = closeOlderYearDialog;
+  document.getElementById('older-year-cancel-btn').onclick = closeOlderYearDialog;
+  document.getElementById('older-year-keep-btn').onclick = closeOlderYearDialog;
+  const switchBtn2 = document.getElementById('older-year-switch-btn');
+  if (switchBtn2) {
+    switchBtn2.onclick = () => {
+      closeOlderYearDialog();
+      switchToYear(r.bbl, null);
+    };
+  }
+}
+
+function closeOlderYearDialog() {
+  const modal = document.getElementById('older-year-modal-backdrop');
+  if (modal) modal.classList.add('hidden');
+}
+
+// ── OTHER YEARS SELECTOR ──────────────────────────────────────────────────────
+async function loadOtherYears(bbl, currentYearEnding) {
+  const sel = document.getElementById('other-years-select');
+  if (!sel) return;
+  try {
+    const resp = await fetch(`/api/building-years?bbl=${encodeURIComponent(bbl)}`);
+    const data = await resp.json();
+    const years = data.years || [];
+    if (years.length <= 1) {
+      sel.closest('.other-years-row').style.display = 'none';
+      return;
+    }
+    sel.innerHTML = years.map(y =>
+      `<option value="${esc(y.year_ending)}" ${y.year_ending === currentYearEnding ? 'selected' : ''}>
+        ${esc(String(y.year))}${y.is_most_recent ? ' (latest)' : ''}
+       </option>`
+    ).join('');
+    sel.onchange = () => {
+      const chosen = sel.value;
+      if (chosen && chosen !== currentYearEnding) {
+        switchToYear(bbl, chosen);
+      }
+    };
+  } catch (e) {
+    const row = sel.closest('.other-years-row');
+    if (row) row.style.display = 'none';
+  }
+}
+
+async function switchToYear(bbl, yearEnding) {
+  // Fetch search results for this BBL to get the chosen year's data
+  try {
+    const resp = await fetch(`/api/search?q=${encodeURIComponent(bbl)}`);
+    const data = await resp.json();
+    const results = (data.results || []).filter(r => r.source === 'll84' && r.bbl === bbl);
+    let target;
+    if (yearEnding === null) {
+      // Most recent = first in list (sorted DESC)
+      target = results[0];
+    } else {
+      target = results.find(r => r.year_ending === yearEnding);
+    }
+    if (target) {
+      // Update ll84YearMap with full results to preserve most-recent info
+      results.forEach(r => {
+        if (!_ll84YearMap[r.bbl] || r.year_ending > _ll84YearMap[r.bbl]) {
+          _ll84YearMap[r.bbl] = r.year_ending;
+        }
+      });
+      populateFromBuilding(target, true);  // skipYearCheck=true (user chose explicitly)
+      _viewingOlderYear = yearEnding !== null && yearEnding !== _ll84YearMap[bbl];
+    }
+  } catch (e) { /* ignore */ }
 }
 
 function setValue(id, val) {
@@ -524,8 +694,26 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSaveMod
 function openSaveModal() {
   const body = document.getElementById('save-modal-body');
   document.getElementById('save-modal-title').textContent = 'Save Building to Portfolio';
+
+  // Warn if saving data from an older year (LL84 source only, not saved buildings)
+  const newerYearWarning = (_viewingOlderYear && currentBuildingData && currentBuildingData.source === 'll84')
+    ? (() => {
+        const bbl      = currentBuildingData.bbl;
+        const latestYE = _ll84YearMap[bbl];
+        const latestYr = latestYE ? latestYE.substring(0, 4) : null;
+        const currYr   = currentBuildingData.year_ending ? currentBuildingData.year_ending.substring(0, 4) : '?';
+        return latestYr
+          ? `<div class="save-older-year-warning">
+               &#9888; You are saving data from <strong>${esc(currYr)}</strong>.
+               More recent data (${esc(latestYr)}) is available.
+               <br><button class="btn-link" id="save-switch-to-latest">Load ${esc(latestYr)} data instead</button>
+             </div>`
+          : '';
+      })()
+    : '';
+
   if (currentSaveName) {
-    body.innerHTML = `
+    body.innerHTML = newerYearWarning + `
       <div class="save-option">
         <p class="save-option-desc">Update the existing saved record:</p>
         <button class="btn btn-primary save-overwrite-btn" id="overwrite-confirm-btn">
@@ -546,7 +734,7 @@ function openSaveModal() {
     document.getElementById('save-as-btn').addEventListener('click', saveAsNew);
     document.getElementById('save-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveAsNew(); });
   } else {
-    body.innerHTML = `
+    body.innerHTML = newerYearWarning + `
       <div class="save-option">
         <label class="input-label" for="save-name-input">Building Name in Portfolio:</label>
         <div class="save-input-row">
@@ -559,6 +747,16 @@ function openSaveModal() {
     document.getElementById('save-as-btn').addEventListener('click', saveAsNew);
     document.getElementById('save-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveAsNew(); });
   }
+
+  // Wire up "switch to latest year" link inside the save modal
+  const saveSwitch = document.getElementById('save-switch-to-latest');
+  if (saveSwitch && currentBuildingData && currentBuildingData.bbl) {
+    saveSwitch.addEventListener('click', () => {
+      closeSaveModal();
+      switchToYear(currentBuildingData.bbl, null);
+    });
+  }
+
   document.getElementById('save-modal-backdrop').classList.remove('hidden');
   setTimeout(() => document.getElementById('save-name-input')?.focus(), 50);
 }
