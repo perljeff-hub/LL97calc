@@ -97,6 +97,9 @@ function syncNavLinks(hasSaveName) {
   }
 }
 
+// Extract save_name from URL path: /building-history/<save_name>
+const saveName = decodeURIComponent(window.location.pathname.replace('/building-history/', ''));
+
 // Render chip + enable nav links from localStorage immediately (before async data loads)
 function renderChipFromStorage() {
   try {
