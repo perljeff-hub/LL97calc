@@ -2208,10 +2208,10 @@ def get_building_history(save_name):
     # Determine which field-rows changed between consecutive years
     sorted_yrs = sorted(year_data.keys())
     field_keys = [
+        'energy_star_score', 'electricity_kwh', 'natural_gas_therms', 'district_steam_mlb',
+        'fuel_oil_2_gal', 'fuel_oil_4_gal',
         'bbl', 'bin', 'property_name', 'address', 'borough', 'postcode',
-        'gross_floor_area', 'occupancy_types', 'energy_star_score',
-        'electricity_kwh', 'natural_gas_therms', 'district_steam_mlb',
-        'fuel_oil_2_gal', 'fuel_oil_4_gal', 'reported_ghg',
+        'gross_floor_area', 'occupancy_types', 'reported_ghg',
     ]
     changed_rows = set()
     for i in range(1, len(sorted_yrs)):
