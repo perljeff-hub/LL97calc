@@ -1798,6 +1798,38 @@ body {
   color: var(--blue-dark);
   white-space: nowrap;
 }
+.pf-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: .15rem .25rem;
+  border-radius: 4px;
+  color: var(--gray-400);
+  cursor: pointer;
+  line-height: 1;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.pf-edit-btn:hover { color: var(--blue-dark); background: var(--gray-50); }
+.pf-edit-divider { border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0; }
+.pf-edit-danger-label { font-size: .8rem; font-weight: 600; color: var(--red); margin: 0 0 .5rem; }
+.pf-edit-warning {
+  font-size: .88rem;
+  color: var(--gray-700);
+  background: #fff5f5;
+  border: 1px solid #fcc;
+  border-radius: 6px;
+  padding: .65rem .85rem;
+  margin: 0 0 .85rem;
+}
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  border: 1px solid var(--red);
+}
+.btn-danger:hover { background: #a93226; border-color: #a93226; }
 .pf-bldg-prop {
   font-size: .82rem;
   color: var(--gray-700);

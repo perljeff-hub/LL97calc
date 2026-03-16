@@ -72,6 +72,49 @@
 
 </main>
 
+<!-- ── BUILDING EDIT MODAL ────────────────────────────────────────────────── -->
+<div id="pf-edit-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="pf-edit-modal-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="pf-edit-modal-title">Edit Building</h3>
+      <button class="modal-close" id="pf-edit-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="pf-edit-desc" class="rp-modal-desc"></p>
+
+      <!-- Rename section -->
+      <div id="pf-edit-rename-section">
+        <div class="form-group">
+          <label class="input-label" for="pf-edit-name-input">Rename building</label>
+          <input type="text" id="pf-edit-name-input" class="form-input" placeholder="Building name" />
+        </div>
+        <div class="modal-actions" style="margin-top:0.75rem">
+          <button class="btn btn-primary btn-sm" id="pf-edit-rename-btn">Save Name</button>
+        </div>
+      </div>
+
+      <hr class="pf-edit-divider" />
+
+      <!-- Delete section -->
+      <div id="pf-edit-delete-section">
+        <p class="pf-edit-danger-label">Danger zone</p>
+        <button class="btn btn-danger btn-sm" id="pf-edit-delete-btn">Delete Building</button>
+      </div>
+
+      <!-- Delete confirmation -->
+      <div id="pf-edit-confirm-section" class="hidden">
+        <p class="pf-edit-warning">Are you sure you want to delete this building from the portfolio? All reduction measures and scenarios will be deleted. Raw data from public sources will not.</p>
+        <div class="modal-actions">
+          <button class="btn btn-danger" id="pf-edit-confirm-delete-btn">Yes, Delete</button>
+          <button class="btn btn-ghost" id="pf-edit-cancel-delete-btn">Cancel</button>
+        </div>
+      </div>
+
+      <div id="pf-edit-error" class="error-msg hidden" style="margin-top:0.75rem"></div>
+    </div>
+  </div>
+</div>
+
 <footer class="site-footer">
   <div class="footer-inner">
     <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
