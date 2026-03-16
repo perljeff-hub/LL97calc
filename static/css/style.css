@@ -2295,3 +2295,11 @@ body {
   text-decoration: underline;
 }
 .btn-link:hover { color: var(--blue-dark); }
+
+/* ── Portfolio header with Historical Performance link ───────────────────── */
+.portfolio-header-actions {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
