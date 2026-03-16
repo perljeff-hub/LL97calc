@@ -2224,6 +2224,9 @@ body {
 .bh-row-summary .bh-td-field { color: var(--gray-800); }
 .bh-row-source .bh-td-field  { font-size: .8rem; color: var(--gray-400); }
 .bh-row-source .bh-td-val    { font-size: .8rem; }
+.bh-trend      { font-size: .72rem; vertical-align: middle; margin-left: .2rem; }
+.bh-trend-good { color: var(--green); }
+.bh-trend-bad  { color: var(--red); }
 .bh-row-changed {
   background: #fffbe6 !important;
 }

@@ -34,7 +34,26 @@ const FIELD_LABELS = {
   reported_ghg:       'Reported GHG (tCO₂e)',
 };
 
-function formatFieldValue(key, val) {
+// Trend fields: key → true = higher is better (green↑/red↓), false = lower is better (red↑/green↓)
+const TREND_FIELDS = {
+  energy_star_score:  true,
+  electricity_kwh:    false,
+  natural_gas_therms: false,
+  district_steam_mlb: false,
+  fuel_oil_2_gal:     false,
+  fuel_oil_4_gal:     false,
+};
+
+function trendArrow(curr, prev, higherIsBetter) {
+  if (curr == null || prev == null || curr === prev) return '';
+  const up   = curr > prev;
+  const good = higherIsBetter ? up : !up;
+  const cls  = good ? 'bh-trend-good' : 'bh-trend-bad';
+  const sym  = up ? '▲' : '▼';
+  return ` <span class="bh-trend ${cls}" title="${up ? '+' : '−'}${fmtNum(Math.abs(curr - prev), 1)} vs prior year">${sym}</span>`;
+}
+
+
   if (val == null) return '—';
   if (key === 'gross_floor_area' || key === 'electricity_kwh') return fmtNum(val, 0);
   if (key === 'natural_gas_therms' || key === 'fuel_oil_2_gal' || key === 'fuel_oil_4_gal') return fmtNum(val, 1);
@@ -153,8 +172,12 @@ function renderPage(data) {
   }
   html += '</tr></thead><tbody>';
 
+  // Identify the most recent and second-most-recent years for trend indicators
+  const latestYr = years.length > 0 ? years[years.length - 1] : null;
+  const prevYr   = years.length > 1 ? years[years.length - 2] : null;
+
   // Summary rows (emissions + fine) at top
-  html += buildSummaryRows(years, yearData);
+  html += buildSummaryRows(years, yearData, latestYr, prevYr);
 
   // Separator
   html += `<tr class="bh-separator-row"><td colspan="${years.length + 1}" class="bh-separator">LL84 Reported Data</td></tr>`;
@@ -167,9 +190,15 @@ function renderPage(data) {
 
     html += `<tr class="${rowClass}"><td class="bh-td-field">${esc(label)}</td>`;
     for (const yr of years) {
-      const yd = yearData[String(yr)];
+      const yd  = yearData[String(yr)];
       const val = yd && yd.fields ? yd.fields[fk] : null;
-      html += `<td class="bh-td-val">${formatFieldValue(fk, val)}</td>`;
+      let cell  = formatFieldValue(fk, val);
+      if (yr === latestYr && fk in TREND_FIELDS) {
+        const ydPrev  = prevYr != null ? yearData[String(prevYr)] : null;
+        const valPrev = ydPrev && ydPrev.fields ? ydPrev.fields[fk] : null;
+        cell += trendArrow(val, valPrev, TREND_FIELDS[fk]);
+      }
+      html += `<td class="bh-td-val">${cell}</td>`;
     }
     html += '</tr>';
   }
@@ -180,15 +209,22 @@ function renderPage(data) {
   document.getElementById('bh-content').classList.remove('hidden');
 }
 
-function buildSummaryRows(years, yearData) {
+function buildSummaryRows(years, yearData, latestYr, prevYr) {
   let html = '';
+
+  const ydLatest = latestYr != null ? yearData[String(latestYr)] : null;
+  const ydPrev   = prevYr   != null ? yearData[String(prevYr)]   : null;
 
   // Reported / override emissions row
   html += '<tr class="bh-row-summary"><td class="bh-td-field"><strong>GHG Emissions (tCO₂e)</strong></td>';
   for (const yr of years) {
     const yd = yearData[String(yr)];
     const v  = yd ? yd.emissions : null;
-    html += `<td class="bh-td-val bh-td-emissions">${v != null ? fmtNum(v, 1) : '—'}</td>`;
+    let cell = v != null ? fmtNum(v, 1) : '—';
+    if (yr === latestYr) {
+      cell += trendArrow(v, ydPrev ? ydPrev.emissions : null, false);
+    }
+    html += `<td class="bh-td-val bh-td-emissions">${cell}</td>`;
   }
   html += '</tr>';
 
@@ -209,6 +245,9 @@ function buildSummaryRows(years, yearData) {
       fineCell = `<span class="rp-fine-amount">${fmtDollars(fine)}</span>`;
     } else {
       fineCell = '<span class="rp-fine-zero">$0</span>';
+    }
+    if (yr === latestYr) {
+      fineCell += trendArrow(fine, ydPrev ? ydPrev.fine : null, false);
     }
     const fineClass = fine != null && fine > 0 ? ' rp-td-has-fine' : '';
     html += `<td class="bh-td-val${fineClass}">${fineCell}</td>`;
