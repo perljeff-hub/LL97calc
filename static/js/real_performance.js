@@ -228,6 +228,12 @@ function renderActiveBuildingChip() {
       `<span class="active-building-chip">${svgBuilding}<span class="active-building-chip-name">${esc(state.saveName)}</span></span>` +
       `<div class="active-building-tooltip">${tipHtml}</div>` +
       `</div>`;
+    const calcLink = document.getElementById('calc-nav-link');
+    const dd = document.getElementById('manage-nav-dropdown');
+    const bt = document.getElementById('manage-nav-btn');
+    if (calcLink) { calcLink.classList.remove('nav-link-disabled'); calcLink.removeAttribute('title'); }
+    if (dd)       { dd.classList.remove('disabled'); }
+    if (bt)       { bt.classList.remove('nav-link-disabled'); }
   } catch (e) { /* ignore */ }
 }
 
