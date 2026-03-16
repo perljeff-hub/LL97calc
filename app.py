@@ -1719,6 +1719,29 @@ def _get_period_for_year(year):
     return '2050_plus'
 
 
+def _compute_ll97_emissions_from_ll84(ll84_row):
+    """
+    Compute LL97 tCO2e emissions from LL84 energy data using the 2024_2029
+    utility factors as a consistent baseline.  Returns None if no energy data.
+    """
+    def kbtu_to(val, divisor):
+        return (val / divisor) if val else 0.0
+
+    energy = {
+        'electricity_kwh':    (ll84_row['electricity_kwh'] or 0),
+        'natural_gas_therms': kbtu_to(ll84_row['natural_gas_kbtu'], 100),
+        'district_steam_mlb': kbtu_to(ll84_row['district_steam_kbtu'], 1194),
+        'fuel_oil_2_gal':     kbtu_to(ll84_row['fuel_oil_2_kbtu'], 138.5),
+        'fuel_oil_4_gal':     kbtu_to(ll84_row['fuel_oil_4_kbtu'], 146.0),
+    }
+    if not any(energy.values()):
+        reported = ll84_row.get('reported_ghg_emissions')
+        return round(float(reported), 2) if reported else None
+    utility_factors = get_utility_factors({})
+    total = calculate_emissions(energy, utility_factors)['2024_2029']['total']
+    return round(total, 2)
+
+
 def _compute_fine_from_ll84(ll84_row, occupancy_groups, calendar_year):
     """
     Compute the LL97 fine for a historical year using LL84 energy data and the
@@ -1941,7 +1964,7 @@ def get_real_performance():
                         (ph['ll84_bbl'], ph['ll84_year_ending'])
                     ).fetchone()
                     if row:
-                        ph['ll84_emissions'] = row['reported_ghg_emissions']
+                        ph['ll84_emissions'] = _compute_ll97_emissions_from_ll84(row)
                         ph['computed_fine']  = _compute_fine_from_ll84(row, occ, yr)
                     else:
                         ph['ll84_emissions'] = None
@@ -2161,7 +2184,7 @@ def get_building_history(save_name):
         else:
             ll84_row = ll84_by_year.get(yr)
             fields   = _ll84_to_display(ll84_row) if ll84_row else None
-            emissions = ll84_row['reported_ghg_emissions'] if ll84_row else None
+            emissions = _compute_ll97_emissions_from_ll84(ll84_row) if ll84_row else None
             fine      = _compute_fine_from_ll84(ll84_row, occ, yr) if ll84_row else None
             year_data[yr] = {
                 'source':    'll84',
@@ -2177,7 +2200,7 @@ def get_building_history(save_name):
             fine   = _compute_fine_from_ll84(ll84_row, occ, yr)
             year_data[yr] = {
                 'source':    'll84',
-                'emissions': ll84_row.get('reported_ghg_emissions'),
+                'emissions': _compute_ll97_emissions_from_ll84(ll84_row),
                 'fine':      fine,
                 'fields':    fields,
             }
