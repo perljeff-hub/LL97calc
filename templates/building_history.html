@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Building History — NYC LL97 Planner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-left-group">
+      <div class="header-logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="8" fill="#1a5276"/>
+          <path d="M8 28 L18 8 L28 28" stroke="#e8f4fd" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 20 L24 20" stroke="#e8f4fd" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="header-title">NYC LL97 Planner</div>
+          <div class="header-sub">Calculate LL97 exposure and plan to reduce emissions.</div>
+        </div>
+      </div>
+      <nav class="header-nav-primary">
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/real-performance" class="nav-link">Real Performance</a>
+        <a href="/select-building" class="nav-link">Select Building</a>
+      </nav>
+    </div>
+    <nav class="header-nav">
+      <div id="active-building-nav" class="active-building-nav"></div>
+      <a href="/calculate" class="nav-link nav-link-disabled" id="calc-nav-link" title="Select a building to enable Calculate">Calculate</a>
+      <div class="nav-dropdown disabled" id="manage-nav-dropdown">
+        <a href="/manage" class="nav-link nav-link-disabled nav-dropdown-trigger" id="manage-nav-btn">
+          Manage
+          <svg class="nav-chevron" width="9" height="6" viewBox="0 0 9 6" fill="currentColor" aria-hidden="true"><path d="M0 0l4.5 6L9 0H0z"/></svg>
+        </a>
+        <div class="nav-dropdown-menu" id="manage-nav-menu">
+          <a href="/manage" class="nav-dropdown-item">Timeline</a>
+          <a href="/reduction-plan" class="nav-dropdown-item">Reduction Plan</a>
+        </div>
+      </div>
+      <a href="/settings" class="nav-link">&#9881; Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main-container">
+
+  <div class="bh-back-row">
+    <a href="/real-performance" class="btn btn-ghost btn-sm bh-back-btn">&#8592; Back to Real Performance</a>
+  </div>
+
+  <div id="bh-loading" class="card manage-status-card">
+    <p class="manage-status-text">Loading building history…</p>
+  </div>
+  <div id="bh-error" class="error-msg hidden" style="margin:0 0 1rem"></div>
+
+  <div id="bh-content" class="hidden">
+    <div class="bh-header">
+      <h1 class="portfolio-page-title" id="bh-title">Building History</h1>
+      <p class="rp-subtitle" id="bh-address"></p>
+    </div>
+
+    <div class="bh-table-wrap">
+      <table class="bh-table" id="bh-table">
+        <!-- injected by JS -->
+      </table>
+    </div>
+
+    <p class="rp-legend" style="margin-top:0.75rem">
+      <span class="rp-legend-changed"></span> Value changed from prior year
+    </p>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>LL97 compliance calculations are estimates based on 1 RCNY §103-14 and NYC Admin. Code §28-320.
+       Not a substitute for professional compliance advice. Penalty rate: $268/tCO₂e.</p>
+  </div>
+</footer>
+
+<script src="{{ url_for('static', filename='js/building_history.js') }}"></script>
+<script src="{{ url_for('static', filename='js/active_building_nav.js') }}"></script>
+</body>
+</html>

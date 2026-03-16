@@ -2008,3 +2008,290 @@ body {
 
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REAL PERFORMANCE OVER TIME PAGE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page header ─────────────────────────────────────────────────────────── */
+.rp-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.rp-subtitle {
+  color: var(--gray-600);
+  font-size: .9rem;
+  margin: .15rem 0 0;
+}
+
+/* ── Table wrapper ───────────────────────────────────────────────────────── */
+.rp-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.rp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+
+/* ── Header cells ────────────────────────────────────────────────────────── */
+.rp-table thead tr {
+  background: var(--gray-50);
+  border-bottom: 2px solid var(--border);
+}
+.rp-th-building {
+  text-align: left;
+  padding: .6rem .75rem;
+  min-width: 200px;
+  font-weight: 600;
+  color: var(--gray-700);
+  position: sticky;
+  left: 0;
+  background: var(--gray-50);
+  z-index: 2;
+}
+.rp-th-year {
+  text-align: center;
+  padding: .6rem .75rem;
+  min-width: 110px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+/* ── Body cells ──────────────────────────────────────────────────────────── */
+.rp-table tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+.rp-table tbody tr:last-child { border-bottom: none; }
+.rp-table tbody tr:hover { background: #f8fafd; }
+
+.rp-td-building {
+  padding: .65rem .75rem;
+  min-width: 200px;
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 1;
+}
+.rp-table tbody tr:hover .rp-td-building { background: #f8fafd; }
+.rp-bldg-link {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+.rp-bldg-link:hover { text-decoration: underline; }
+.rp-bldg-sub {
+  font-size: .78rem;
+  color: var(--gray-500);
+  margin-top: .1rem;
+}
+
+/* ── Data cells ──────────────────────────────────────────────────────────── */
+.rp-td-data {
+  padding: .5rem .75rem;
+  text-align: center;
+  vertical-align: middle;
+  font-size: .85rem;
+}
+.rp-td-empty {
+  padding: .5rem .75rem;
+  text-align: center;
+  color: var(--gray-400);
+}
+.rp-add-link, .rp-edit-link {
+  font-size: .8rem;
+  color: var(--blue);
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+.rp-edit-link {
+  font-size: .72rem;
+  color: var(--gray-500);
+  display: block;
+  margin-top: .15rem;
+}
+.rp-edit-link:hover { color: var(--blue); }
+
+/* Cell content lines */
+.rp-cell-emissions { font-weight: 500; }
+.rp-cell-fine      { font-size: .8rem; margin-top: .15rem; }
+
+/* Fine styling */
+.rp-fine-dash   { color: var(--gray-400); }
+.rp-fine-zero   { color: var(--gray-500); }
+.rp-fine-amount { color: #c0392b; font-weight: 600; }
+
+/* Row with a fine — red tint */
+.rp-td-has-fine { background: #fff5f5 !important; }
+
+/* Source indicator */
+.rp-td-ll84   { }
+.rp-td-manual { background: #fafaf0; }
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.rp-legend {
+  font-size: .8rem;
+  color: var(--gray-500);
+  margin-top: .75rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.rp-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+.rp-legend-dot.rp-src-ll84   { background: #fff; }
+.rp-legend-dot.rp-src-manual { background: #fafaf0; }
+.rp-legend-dot.rp-fine       { background: #fff5f5; border-color: #f5c6c6; }
+.rp-legend-changed            { display: inline-block; width: 28px; height: 10px;
+                                  background: #fffbe6; border: 1px solid #f5d800; border-radius: 2px; vertical-align: middle; }
+
+/* ── Modal helpers ───────────────────────────────────────────────────────── */
+.rp-modal-desc { font-size: .9rem; color: var(--gray-600); margin-bottom: .75rem; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BUILDING HISTORY PAGE
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bh-back-row   { margin-bottom: 1rem; }
+.bh-back-btn   { display: inline-flex; align-items: center; gap: .3rem; }
+.bh-header     { margin-bottom: 1.25rem; }
+
+.bh-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.bh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+.bh-table thead tr {
+  background: var(--gray-50);
+  border-bottom: 2px solid var(--border);
+}
+.bh-th-field {
+  text-align: left;
+  padding: .6rem .75rem;
+  min-width: 210px;
+  font-weight: 600;
+  color: var(--gray-700);
+  position: sticky;
+  left: 0;
+  background: var(--gray-50);
+  z-index: 2;
+}
+.bh-th-year {
+  text-align: center;
+  padding: .6rem .75rem;
+  min-width: 120px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+.bh-table tbody tr { border-bottom: 1px solid var(--border); }
+.bh-table tbody tr:last-child { border-bottom: none; }
+.bh-td-field {
+  padding: .55rem .75rem;
+  color: var(--gray-600);
+  font-size: .85rem;
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 1;
+}
+.bh-td-val {
+  padding: .55rem .75rem;
+  text-align: center;
+  font-size: .875rem;
+}
+.bh-td-emissions { font-weight: 600; }
+.bh-row-summary .bh-td-field { color: var(--gray-800); }
+.bh-row-source .bh-td-field  { font-size: .8rem; color: var(--gray-400); }
+.bh-row-source .bh-td-val    { font-size: .8rem; }
+.bh-row-changed {
+  background: #fffbe6 !important;
+}
+.bh-row-changed .bh-td-field { background: #fffbe6; }
+.bh-separator-row .bh-separator {
+  padding: .4rem .75rem;
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  text-transform: uppercase;
+}
+
+/* Badge variants */
+.badge-ll84   { background: #e8f4fd; color: #1a5276; }
+.badge-manual { background: #fef9c3; color: #713f12; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SELECT BUILDING — YEAR SELECTOR & WARNINGS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.older-year-banner {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: var(--radius);
+  padding: .55rem .75rem;
+  font-size: .85rem;
+  color: #6d4c00;
+  margin-bottom: .75rem;
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.other-years-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: .75rem;
+  flex-wrap: wrap;
+}
+.other-years-label {
+  font-size: .85rem;
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+.other-years-select {
+  max-width: 200px;
+  padding: .3rem .5rem;
+  font-size: .85rem;
+}
+.save-older-year-warning {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: var(--radius);
+  padding: .6rem .75rem;
+  font-size: .85rem;
+  color: #6d4c00;
+  margin-bottom: 1rem;
+}
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.btn-link:hover { color: var(--blue-dark); }

@@ -123,15 +123,17 @@ def create_tables(conn):
     ''')
 
     conn.execute('CREATE INDEX IF NOT EXISTS idx_bbl ON buildings(bbl)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_bin ON buildings(bin)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_address ON buildings(address)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_property_name ON buildings(property_name)')
 
-    # Migrate existing databases that are missing the per-occupancy floor area columns
+    # Migrate existing databases that are missing columns
     existing = {row[1] for row in conn.execute("PRAGMA table_info(buildings)").fetchall()}
     for col in ('primary_floor_area', 'second_floor_area', 'third_floor_area'):
         if col not in existing:
             conn.execute(f'ALTER TABLE buildings ADD COLUMN {col} REAL')
+    if 'bin' not in existing:
+        conn.execute('ALTER TABLE buildings ADD COLUMN bin TEXT')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_bin ON buildings(bin)')
 
     conn.commit()
 
