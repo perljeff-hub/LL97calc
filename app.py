@@ -468,7 +468,8 @@ def list_saved_buildings():
     create_saved_tables(conn)
     rows = conn.execute(
         'SELECT save_name, property_name, address, borough, postcode, '
-        'gross_floor_area, saved_at, selected_scenario_id FROM saved_buildings ORDER BY saved_at DESC'
+        'gross_floor_area, saved_at, selected_scenario_id FROM saved_buildings '
+        'WHERE (deleted IS NULL OR deleted = 0) ORDER BY saved_at DESC'
     ).fetchall()
     conn.close()
     return jsonify({'buildings': [dict(r) for r in rows]})
@@ -522,6 +523,55 @@ def set_selected_scenario(name):
     return jsonify({'success': True, 'selected_scenario_id': scenario_id})
 
 
+@app.route('/api/saved-buildings/<path:name>/rename', methods=['POST'])
+def rename_saved_building(name):
+    """Rename a saved building and cascade-update all FK references."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    new_name = (data.get('new_name') or '').strip()
+    if not new_name:
+        return jsonify({'error': 'new_name is required'}), 400
+    if new_name == name:
+        return jsonify({'success': True})
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    if not conn.execute('SELECT id FROM saved_buildings WHERE save_name = ?', (name,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Building not found'}), 404
+    if conn.execute('SELECT id FROM saved_buildings WHERE save_name = ?', (new_name,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'A building with that name already exists'}), 409
+    try:
+        conn.execute('UPDATE saved_buildings       SET save_name          = ? WHERE save_name          = ?', (new_name, name))
+        conn.execute('UPDATE measures              SET building_save_name = ? WHERE building_save_name = ?', (new_name, name))
+        conn.execute('UPDATE scenarios             SET building_save_name = ? WHERE building_save_name = ?', (new_name, name))
+        conn.execute('UPDATE performance_history   SET building_save_name = ? WHERE building_save_name = ?', (new_name, name))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+    conn.close()
+    return jsonify({'success': True, 'new_name': new_name})
+
+
+@app.route('/api/saved-buildings/<path:name>', methods=['DELETE'])
+def delete_saved_building(name):
+    """Soft-delete a saved building (marks deleted=1; raw data is preserved)."""
+    if not os.path.exists(SAVED_DB_PATH):
+        return jsonify({'error': 'Not found'}), 404
+    conn = get_saved_db_connection()
+    create_saved_tables(conn)
+    if not conn.execute('SELECT id FROM saved_buildings WHERE save_name = ?', (name,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Building not found'}), 404
+    conn.execute('UPDATE saved_buildings SET deleted = 1 WHERE save_name = ?', (name,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
 @app.route('/api/portfolio')
 def get_portfolio():
     """Return all saved buildings with baseline compliance cache + selected scenario info."""
@@ -530,7 +580,7 @@ def get_portfolio():
     conn = get_saved_db_connection()
     create_saved_tables(conn)
     rows = conn.execute(
-        'SELECT * FROM saved_buildings ORDER BY saved_at DESC'
+        'SELECT * FROM saved_buildings WHERE (deleted IS NULL OR deleted = 0) ORDER BY saved_at DESC'
     ).fetchall()
 
     buildings = []
@@ -600,7 +650,7 @@ def recalculate_portfolio():
         return jsonify({'status': 'ok', 'updated': 0})
     conn = get_saved_db_connection()
     create_saved_tables(conn)
-    rows = conn.execute('SELECT * FROM saved_buildings').fetchall()
+    rows = conn.execute('SELECT * FROM saved_buildings WHERE (deleted IS NULL OR deleted = 0)').fetchall()
     updated = 0
     for row in rows:
         b = dict(row)
@@ -723,11 +773,12 @@ def search_buildings():
             sconn = get_saved_db_connection()
             srows = sconn.execute('''
                 SELECT * FROM saved_buildings
-                WHERE save_name LIKE ?
+                WHERE (deleted IS NULL OR deleted = 0)
+                  AND (save_name LIKE ?
                    OR UPPER(address)       LIKE UPPER(?)
                    OR UPPER(property_name) LIKE UPPER(?)
                    OR source_bbl = ?
-                   OR source_bin = ?
+                   OR source_bin = ?)
                 ORDER BY saved_at DESC
                 LIMIT 10
             ''', (q_like, q_like, q_like, q, q)).fetchall()
@@ -1892,7 +1943,8 @@ def _run_ll84_autolink(sconn):
         return 0
 
     buildings = sconn.execute(
-        'SELECT save_name, source_bbl, source_bin, occupancy_groups FROM saved_buildings'
+        'SELECT save_name, source_bbl, source_bin, occupancy_groups FROM saved_buildings '
+        'WHERE (deleted IS NULL OR deleted = 0)'
     ).fetchall()
 
     ll84_conn = get_db_connection()
@@ -1987,7 +2039,8 @@ def get_real_performance():
     # Load all saved buildings
     bldg_rows = sconn.execute(
         'SELECT save_name, property_name, address, borough, gross_floor_area, '
-        'occupancy_groups FROM saved_buildings ORDER BY property_name'
+        'occupancy_groups FROM saved_buildings '
+        'WHERE (deleted IS NULL OR deleted = 0) ORDER BY property_name'
     ).fetchall()
 
     # Load all performance_history records

@@ -92,6 +92,11 @@ function buildBuildingCard(b) {
   header.innerHTML = `
     <div class="pf-card-identity">
       <span class="pf-bldg-name">${esc(b.save_name)}</span>
+      <button class="pf-edit-btn" title="Rename or delete building" data-name="${esc(b.save_name)}" aria-label="Edit building">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </button>
       ${b.property_name && b.property_name !== b.save_name ? `<span class="pf-bldg-prop">${esc(b.property_name)}</span>` : ''}
       ${metaParts.length ? `<span class="pf-bldg-meta">${metaParts.join(' · ')}</span>` : ''}
     </div>
@@ -176,9 +181,111 @@ function buildBuildingCard(b) {
     e.preventDefault();
     openBuildingInTimeline(b.save_name);
   });
+  card.querySelector('.pf-edit-btn').addEventListener('click', e => {
+    e.preventDefault();
+    openEditModal(b.save_name);
+  });
 
   return card;
 }
+
+// ── EDIT MODAL ────────────────────────────────────────────────────────────────
+let _editTarget = null;  // save_name of building being edited
+
+function openEditModal(saveName) {
+  _editTarget = saveName;
+  document.getElementById('pf-edit-desc').textContent = saveName;
+  document.getElementById('pf-edit-name-input').value = saveName;
+  document.getElementById('pf-edit-error').classList.add('hidden');
+  document.getElementById('pf-edit-confirm-section').classList.add('hidden');
+  document.getElementById('pf-edit-delete-btn').classList.remove('hidden');
+  document.getElementById('pf-edit-backdrop').classList.remove('hidden');
+  setTimeout(() => document.getElementById('pf-edit-name-input').focus(), 50);
+}
+
+function closeEditModal() {
+  document.getElementById('pf-edit-backdrop').classList.add('hidden');
+  _editTarget = null;
+}
+
+async function doRename() {
+  if (!_editTarget) return;
+  const newName = document.getElementById('pf-edit-name-input').value.trim();
+  const errEl   = document.getElementById('pf-edit-error');
+  if (!newName) {
+    errEl.textContent = 'Please enter a name.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(_editTarget) + '/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: newName }),
+    });
+    const json = await resp.json();
+    if (!resp.ok) { errEl.textContent = json.error || 'Rename failed.'; errEl.classList.remove('hidden'); return; }
+    // If the renamed building is the active one, update localStorage
+    try {
+      const active = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
+      if (active && active.saveName === _editTarget) {
+        active.saveName = newName;
+        localStorage.setItem(ACTIVE_KEY, JSON.stringify(active));
+        const state = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (state) { state.saveName = newName; if (state.buildingData) state.buildingData.save_name = newName; localStorage.setItem(SESSION_KEY, JSON.stringify(state)); }
+      }
+    } catch (e) { /* ignore */ }
+    closeEditModal();
+    sessionStorage.removeItem(PF_SESSION_KEY);
+    loadPortfolio();
+  } catch (e) {
+    errEl.textContent = 'Rename failed. Please try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function doDelete() {
+  if (!_editTarget) return;
+  const errEl = document.getElementById('pf-edit-error');
+  try {
+    const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(_editTarget), { method: 'DELETE' });
+    const json = await resp.json();
+    if (!resp.ok) { errEl.textContent = json.error || 'Delete failed.'; errEl.classList.remove('hidden'); return; }
+    // Clear active building from localStorage if it was the deleted one
+    try {
+      const active = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
+      if (active && active.saveName === _editTarget) {
+        localStorage.removeItem(ACTIVE_KEY);
+        localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem('ll97_timeline_scenario_id');
+      }
+    } catch (e) { /* ignore */ }
+    closeEditModal();
+    sessionStorage.removeItem(PF_SESSION_KEY);
+    loadPortfolio();
+  } catch (e) {
+    errEl.textContent = 'Delete failed. Please try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+// Edit modal event wiring (runs once at page load)
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('pf-edit-close').addEventListener('click', closeEditModal);
+  document.getElementById('pf-edit-backdrop').addEventListener('click', e => { if (e.target === e.currentTarget) closeEditModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEditModal(); });
+  document.getElementById('pf-edit-rename-btn').addEventListener('click', doRename);
+  document.getElementById('pf-edit-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') doRename(); });
+  document.getElementById('pf-edit-delete-btn').addEventListener('click', () => {
+    document.getElementById('pf-edit-confirm-section').classList.remove('hidden');
+    document.getElementById('pf-edit-delete-btn').classList.add('hidden');
+  });
+  document.getElementById('pf-edit-confirm-delete-btn').addEventListener('click', doDelete);
+  document.getElementById('pf-edit-cancel-delete-btn').addEventListener('click', () => {
+    document.getElementById('pf-edit-confirm-section').classList.add('hidden');
+    document.getElementById('pf-edit-delete-btn').classList.remove('hidden');
+  });
+});
 
 async function loadBuildingToLocalStorage(saveName) {
   const resp = await fetch('/api/saved-buildings/' + encodeURIComponent(saveName));
