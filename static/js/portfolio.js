@@ -44,6 +44,7 @@ async function loadPortfolio() {
     const resp = await fetch('/api/portfolio');
     const data = await resp.json();
     document.getElementById('pf-loading').classList.add('hidden');
+    document.getElementById('pf-header-row').classList.remove('hidden');
     const buildings = data.buildings || [];
     if (!buildings.length) {
       document.getElementById('pf-empty').classList.remove('hidden');
@@ -52,6 +53,7 @@ async function loadPortfolio() {
     renderPortfolio(buildings);
   } catch (e) {
     document.getElementById('pf-loading').classList.add('hidden');
+    document.getElementById('pf-header-row').classList.remove('hidden');
     const errEl = document.getElementById('pf-error');
     errEl.textContent = 'Failed to load portfolio: ' + e.message;
     errEl.classList.remove('hidden');
