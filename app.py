@@ -1844,7 +1844,7 @@ def _compute_ll97_emissions_from_ll84(ll84_row):
         'fuel_oil_4_gal':     kbtu_to(ll84_row['fuel_oil_4_kbtu'], 146.0),
     }
     if not any(energy.values()):
-        reported = ll84_row.get('reported_ghg_emissions')
+        reported = ll84_row['reported_ghg_emissions']
         return round(float(reported), 2) if reported else None
     utility_factors = get_utility_factors({})
     total = calculate_emissions(energy, utility_factors)['2024_2029']['total']
