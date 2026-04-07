@@ -259,15 +259,19 @@ def _compute_building_compliance(energy, occupancy_groups):
     for period in COMPLIANCE_PERIODS:
         emissions = emissions_by_period[period]['total']
         limit = calculate_limit(occupancy_groups, period)
-        overage = max(0, emissions - limit)
-        penalty = calculate_penalty(emissions, limit)
+        if limit == 0:
+            overage = None
+            penalty = None
+        else:
+            overage = max(0, emissions - limit)
+            penalty = calculate_penalty(emissions, limit)
         results[period] = {
             'label':      PERIOD_LABELS[period],
             'emissions':  round(emissions, 4),
             'limit':      round(limit, 4),
-            'overage':    round(overage, 4),
-            'penalty':    round(penalty, 2),
-            'compliant':  emissions <= limit,
+            'overage':    round(overage, 4) if overage is not None else None,
+            'penalty':    round(penalty, 2) if penalty is not None else None,
+            'compliant':  emissions <= limit if limit != 0 else None,
             'intensity_kg':       round(emissions / total_floor_area * 1000, 4),
             'limit_intensity_kg': round(limit    / total_floor_area * 1000, 4),
         }
@@ -334,15 +338,19 @@ def _compute_scenario_period_compliance(energy, occupancy_groups, scenario_id, c
         period_emissions = calculate_emissions(adj, utility_factors)[period]
         emissions_adj = period_emissions['total']
         limit = calculate_limit(occupancy_groups, period)
-        overage = max(0, emissions_adj - limit)
-        penalty = calculate_penalty(emissions_adj, limit)
+        if limit == 0:
+            overage = None
+            penalty = None
+        else:
+            overage = max(0, emissions_adj - limit)
+            penalty = calculate_penalty(emissions_adj, limit)
         results[period] = {
             'label':      PERIOD_LABELS[period],
             'emissions':  round(emissions_adj, 4),
             'limit':      round(limit, 4),
-            'overage':    round(overage, 4),
-            'penalty':    round(penalty, 2),
-            'compliant':  emissions_adj <= limit,
+            'overage':    round(overage, 4) if overage is not None else None,
+            'penalty':    round(penalty, 2) if penalty is not None else None,
+            'compliant':  emissions_adj <= limit if limit != 0 else None,
             'intensity_kg':       round(emissions_adj / total_floor_area * 1000, 4),
             'limit_intensity_kg': round(limit          / total_floor_area * 1000, 4),
             'breakdown':  period_emissions['breakdown'],

@@ -284,11 +284,11 @@ def row_formulas(r, espm_rng):
     zc = calc_col(9)
 
     # Overage
-    aa = f'=MAX(0,{vc}{r}-{zc}{r})'
+    aa = f'=IF({zc}{r}=0,"",MAX(0,{vc}{r}-{zc}{r}))'
     aac = calc_col(10)
 
     # Penalty
-    ab = f'={aac}{r}*{pen}'
+    ab = f'=IF({zc}{r}=0,"",{aac}{r}*{pen})'
 
     return [q, rr, s, t, u, v, w, x, y, z, aa, ab]
 

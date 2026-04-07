@@ -370,7 +370,7 @@ function buildChart(buildingName, results, scenarioData = null, scenarioName = '
       cachedYears.push(String(yr));
       baseEmissions.push(Math.round(r.emissions * 100) / 100);
       limits.push(Math.round(r.limit * 100) / 100);
-      cachedBaseFines.push(Math.round(r.penalty));
+      cachedBaseFines.push(r.penalty != null ? Math.round(r.penalty) : 0);
     }
   }
 

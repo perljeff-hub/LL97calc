@@ -614,11 +614,11 @@ function renderPeriods(results, totalSf) {
         <div class="period-divider"></div>
         <div class="period-metric">
           <div class="period-metric-label">Overage</div>
-          <div class="period-metric-value">${r.overage > 0 ? fmtTons(r.overage) + ' tCO₂e' : '—'}</div>
+          <div class="period-metric-value">${r.overage == null ? '—' : r.overage > 0 ? fmtTons(r.overage) + ' tCO₂e' : '—'}</div>
         </div>
         <div class="period-metric">
           <div class="period-metric-label">Annual Penalty</div>
-          <div class="penalty-value ${r.penalty === 0 ? 'zero' : ''}">${r.penalty === 0 ? '$0' : fmtDollars(r.penalty)}</div>
+          <div class="penalty-value ${r.penalty == null ? '' : r.penalty === 0 ? 'zero' : ''}">${r.penalty == null ? '—' : r.penalty === 0 ? '$0' : fmtDollars(r.penalty)}</div>
         </div>
         ${miniBarHtml ? `
         <div class="period-divider"></div>

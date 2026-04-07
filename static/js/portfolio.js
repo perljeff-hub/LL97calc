@@ -132,8 +132,8 @@ function buildBuildingCard(b) {
     COMPLIANCE_PERIODS.forEach(period => {
       const base = b.compliance_cache[period];
       if (!base) { baseHtml += '<td>—</td>'; return; }
-      const cls = base.penalty === 0 ? 'pf-fine-ok' : 'pf-fine-bad';
-      baseHtml += `<td class="${cls}">${base.penalty === 0 ? '$0' : fmtDollars(base.penalty) + '/yr'}</td>`;
+      const cls = base.penalty == null ? '' : base.penalty === 0 ? 'pf-fine-ok' : 'pf-fine-bad';
+      baseHtml += `<td class="${cls}">${base.penalty == null ? '—' : base.penalty === 0 ? '$0' : fmtDollars(base.penalty) + '/yr'}</td>`;
     });
     baseRow.innerHTML = baseHtml;
     tbody.appendChild(baseRow);
@@ -149,7 +149,9 @@ function buildBuildingCard(b) {
         const scen = b.selected_scenario_compliance[period];
         if (!scen) { scenHtml += '<td>—</td>'; return; }
         let cls, text;
-        if (scen.penalty === 0) {
+        if (scen.penalty == null) {
+          cls = ''; text = '—';
+        } else if (scen.penalty === 0) {
           cls = 'pf-fine-ok'; text = '$0';
         } else if (base && scen.penalty < base.penalty) {
           cls = 'pf-fine-better'; text = fmtDollars(scen.penalty) + '/yr';
